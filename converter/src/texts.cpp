@@ -363,10 +363,14 @@ bool exportAreaTriggers(const DataDir& data, const std::string& path, bool verbo
 // glue.txt (stage 5.29): what the login and character screens need besides pictures.
 //   T KEY<TAB>text      every string of Interface\GlueXML\GlueStrings.lua (race / class descriptions RACE_INFO_*,
 //                       CLASS_INFO_*, ...); "\n" stays as the two characters
+//   L code              the game language (7.18): the client sends it at login, so the server answers in it
 //   O race class sex disp inv ... (12 pairs)   CharStartOutfit.dbc: the clothes a new character is shown in
 //   Z area name parent  AreaTable.dbc: the area names (the character list, the zone banner); parent = the zone of a subzone
 bool exportGlueTexts(const DataDir& data, const std::string& path, bool verbose) {
     std::string out = "# wow3ds glue screens: T key text | O race class sex (display invtype) x N | Z area name\n";
+    std::string loc = gameLocaleDir();   // 7.18: the game language; the client announces it at login (server texts)
+    if (loc.empty() || loc == "auto") loc = "enUS";
+    out += "L\t" + loc + "\n";
     size_t nt = 0, no = 0, nz = 0;
     // ---- GlueStrings.lua: NAME = "text";  (Lua escapes \" \\ \n)
     std::vector<uint8_t> lua;

@@ -223,6 +223,11 @@ struct InvItem {
     ItemEnchantView enchant[7];
     bool equipped() const { return bag == kBagSelf && slot < kSlotBagFirst; }
     bool isBagSlot() const { return bag == kBagSelf && slot >= kSlotBagFirst && slot < kSlotBackpackFirst; }
+    // 7.17: the item carries a permanent or temporary enchantment (a lure on the pole, an oil on a weapon)
+    bool enchanted() const {
+        for (const ItemEnchantView& e : enchant) if (e.id) return true;
+        return false;
+    }
 };
 const char* equipSlotName(uint8_t slot);     // "Head" .. "Tabard" for slots 0..18
 
@@ -642,7 +647,9 @@ public:
     uint64_t targetOf(uint64_t guid) const;            // UNIT_TARGET of a unit (assist)
     void startAttack(uint32_t nowMs);                  // CMSG_ATTACKSWING at the target
     void stopAttack(uint32_t nowMs);                   // CMSG_ATTACKSTOP
+    void retryAttack(uint32_t nowMs);                  // 7.19: the wish to attack, once the target is in reach
     void combatAfterCast(uint32_t spell, uint32_t nowMs);   // 6.87: a melee ability starts auto-attack (spells.txt @combat)
+    bool targetInMelee() const;                        // 7.19: the target is inside vMaNGOS ATTACK_DISTANCE (5 yd)
     bool attackWanted() const { return attackWanted_; }   // we asked to auto-attack
     bool attacking() const { return attackOn_; }          // the server confirmed (SMSG_ATTACKSTART)
     uint16_t lastAttackError() const { return attackError_; }   // SMSG_ATTACKSWING_* opcode, 0 = none
@@ -1180,9 +1187,16 @@ private:
 
     uint64_t target_ = 0;
     bool attackWanted_ = false, attackOn_ = false, faceRequest_ = false;
+    // 7.19: a spell that carries us to the target (Charge, 8-25 yd) must not start auto-attack together with the cast:
+    // from 20 yd the server refuses the attack (SMSG_ATTACKSWING_NOTINRANGE) and, since no swing ever begins, the wish
+    // to attack stayed on. inCombat() counts that wish, so the client then sat in the combat stance, with the combat
+    // controls and the Combat tab, until a relog. The spell id waits here until the target is in reach (game.cpp update).
+    uint32_t attackAfterCast_ = 0;
+    uint32_t attackAfterCastMs_ = 0;   // when that deferral was made (it expires: the target may run away)
     bool followMoving_ = false;
     uint16_t attackError_ = 0;
     uint32_t attackErrorMs_ = 0;
+    uint32_t attackRetryMs_ = 0;   // 7.19: the last attempt to start the deferred swing (once a second at most)
     uint64_t lootGuid_ = 0;
     std::vector<std::string> channels_;   // joined channels (SMSG_CHANNEL_NOTIFY "you joined")
     uint32_t autoZone_ = 0;               // the zone the default channels were joined for

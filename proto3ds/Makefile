@@ -110,7 +110,7 @@ endif
 # (or MAKEROM= / BANNERTOOL=). The same .elf as the .3dsx; the romfs folder goes into the CIA itself.
 MAKEROM		?=	makerom
 BANNERTOOL	?=	bannertool
-CIA_VERSION	?=	0 7 0
+CIA_VERSION	?=	0 8 0
 # 6.32b: the memory mode. 178MB (New 3DS "Dev1" mode, APPMEMTYPE 7) is the point of the CIA; 124MB (the normal New 3DS mode,
 # what the .3dsx gets) is a test build with its own title id, installed next to it - if only the 178MB one stays black, the
 # mode is the problem, not the CIA.

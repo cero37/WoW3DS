@@ -1,6 +1,7 @@
 // feed_test — 7.13: the Feed Pet list. The 1.12 server sends subclass 0 for EVERY consumable (vMaNGOS
 // HandleItemQuerySingleOpcode: Class == CONSUMABLE ? 0 : SubClass), so Food & Drink cannot be found by subclass 5:
-// every consumable is offered and the server checks the pet's diet. Trade Goods / Meat is offered too.
+// every consumable is offered and the server checks the pet's diet. Trade Goods / Meat is offered too, and 7.19 also
+// takes a Trade Good whose subclass comes as 0 (a server that zeroes them all: the fish was missing from the list).
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -41,10 +42,10 @@ int main() {
         s.handle(0x0A9, w.b, 1);
     };
     const uint64_t me = 0x77, cooked = 0x400000000001ull, meat = 0x400000000002ull, ore = 0x400000000003ull,
-                   unknown = 0x400000000004ull;
+                   unknown = 0x400000000004ull, fishy = 0x400000000005ull;
     std::map<uint16_t, uint32_t> self = {{UF::UNIT_HEALTH, 100}, {UF::UNIT_MAXHEALTH, 100}};
-    uint64_t bagItems[] = {cooked, meat, ore, unknown};
-    for (size_t i = 0; i < 4; ++i) {   // backpack slots 23..26
+    uint64_t bagItems[] = {cooked, meat, ore, unknown, fishy};
+    for (size_t i = 0; i < 5; ++i) {   // backpack slots 23..27
         const uint16_t slot = (uint16_t)(w3n::kSlotBackpackFirst + i);
         self[UF::PLAYER_FIELD_INV_SLOT_HEAD + 2 * slot] = (uint32_t)bagItems[i];
         self[UF::PLAYER_FIELD_INV_SLOT_HEAD + 2 * slot + 1] = (uint32_t)(bagItems[i] >> 32);
@@ -55,6 +56,7 @@ int main() {
     create(meat, 1, false, 0, {{UF::OBJECT_ENTRY, 11}});
     create(ore, 1, false, 0, {{UF::OBJECT_ENTRY, 12}});
     create(unknown, 1, false, 0, {{UF::OBJECT_ENTRY, 13}});
+    create(fishy, 1, false, 0, {{UF::OBJECT_ENTRY, 14}});
 
     ItemInfo food;
     food.entry = 10; food.cls = 0; food.subclass = 0; food.name = "Cooked Meat"; food.maxStack = 10;   // server sends 0
@@ -62,19 +64,24 @@ int main() {
     flesh.entry = 11; flesh.cls = 7; flesh.subclass = 8; flesh.name = "Raw Meat"; flesh.maxStack = 10;
     ItemInfo metal;
     metal.entry = 12; metal.cls = 7; metal.subclass = 7; metal.name = "Copper Ore"; metal.maxStack = 10;
+    ItemInfo fish;   // 7.19: a Trade Good whose subclass the server zeroed - still offered
+    fish.entry = 14; fish.cls = 7; fish.subclass = 0; fish.name = "Raw Fish"; fish.maxStack = 10;
     s.testSetItemInfo(food);
     s.testSetItemInfo(flesh);
     s.testSetItemInfo(metal);
+    s.testSetItemInfo(fish);
 
     std::vector<InvItem> got = s.petFoodCandidates();
-    CHECK(got.size() == 2, "cooked food (subclass 0) and meat are offered, ore is not (%zu)", got.size());
-    bool haveFood = false, haveMeat = false;
+    CHECK(got.size() == 3, "cooked food (subclass 0), meat and a zero-subclass Trade Good are offered, ore is not (%zu)", got.size());
+    bool haveFood = false, haveMeat = false, haveFish = false;
     for (const InvItem& it : got) {
         haveFood |= it.entry == 10;
         haveMeat |= it.entry == 11;
+        haveFish |= it.entry == 14;
     }
     CHECK(haveFood, "Food & Drink with subclass 0 is in the list");
     CHECK(haveMeat, "Trade Goods / Meat is in the list");
+    CHECK(haveFish, "a Trade Good with subclass 0 is in the list too (7.19)");
     CHECK(!s.itemInfoIfKnown(13), "the unknown bag item is not known yet");
 
     out.clear();

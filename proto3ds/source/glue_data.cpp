@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <cctype>
 
 #include "w3d_character.h"
 #include "w3d_format.h"
@@ -249,12 +250,17 @@ bool Texts::load(const char* path) {
     FILE* f = fopen(path, "r");
     if (!f) return false;
     texts_.clear();
+    gameLocale_.clear();
     zones_.clear();
     outfits_.clear();
     std::vector<char> line(8192);
     while (fgets(line.data(), (int)line.size(), f)) {
         std::vector<std::string> c = fields(line.data());
-        if (c[0] == "T" && c.size() >= 3) {
+        if (c[0] == "L" && c.size() >= 2) {   // 7.18: the game language for the login (the server's texts)
+            bool ok = c[1].size() == 4;
+            for (char ch : c[1]) ok = ok && std::isalpha((unsigned char)ch);
+            if (ok) gameLocale_ = c[1];
+        } else if (c[0] == "T" && c.size() >= 3) {
             std::string v;
             for (size_t i = 0; i < c[2].size(); ++i) {   // "\n" written as two characters
                 if (c[2][i] == '\\' && i + 1 < c[2].size() && c[2][i + 1] == 'n') { v += '\n'; ++i; }

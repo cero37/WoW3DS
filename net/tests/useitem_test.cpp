@@ -251,6 +251,7 @@ int main() {
         CHECK(targets.size() == 1 && targets[0].guid == pole, "only the fishing pole fits");
         CHECK(targets.size() == 1 && targets[0].enchant[0].id == 263 && targets[0].enchant[0].leftMs == 600000,
               "the pole carries enchant 263 for 10 min");
+        CHECK(targets.size() == 1 && targets[0].enchanted(), "the pole reports that it is enchanted (the icon's glow)");
         std::vector<std::string> tip = itemTooltip(poleInfo, targets.empty() ? nullptr : &targets[0], s.spellNames);
         bool hasEnchant = false;
         for (const std::string& l : tip) hasEnchant = hasEnchant || l == "Enchant: Fishing Lure +25 (10m 0s left)";

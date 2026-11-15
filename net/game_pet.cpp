@@ -278,8 +278,11 @@ std::vector<InvItem> GameSession::petFoodCandidates() {
         if (!info || info->missing) continue;
         // 7.13: the 1.12 server writes subclass 0 for every consumable ("client known only 0 subclass" in vMaNGOS), so
         // Food & Drink can no longer be told by subclass 5: list every consumable and let the server check the pet's diet
-        // (it answers SPELL_FAILED_WRONG_PET_FOOD / FOOD_LOWLEVEL). Trade Goods / Meat is the other pet food class.
-        if (info->cls == 0 || (info->cls == 7 && info->subclass == 8)) out.push_back(it);
+        // (it answers SPELL_FAILED_WRONG_PET_FOOD / FOOD_LOWLEVEL).
+        // 7.19: meat and fish are Trade Goods and their subclass comes as 0 as well (the fish that feeds the pet in the PC
+        // client was missing here), so a Trade Good with subclass Meat (8) or with no subclass is offered too - the
+        // server decides; anything the pet will not eat comes back as a line, never as a silent no.
+        if (info->cls == 0 || (info->cls == 7 && (info->subclass == 8 || info->subclass == 0))) out.push_back(it);
     }
     return out;
 }

@@ -158,6 +158,20 @@ void GameUi::iconBox(int x, int y, int size, const ui::Image& icon, const std::s
     list_.outline(x - 1, y - 1, size + 2, size + 2, border);
 }
 
+// 7.17: an item with an enchantment (a lure on the fishing pole, an oil on a weapon) glows green in the bags and on the
+// paper doll, as a hint of the original client's item buttons. The glow goes behind the icon; without the interface
+// pack's glow sprite (made before 7.18) a soft green halo stands in for it.
+void GameUi::itemGlow(const w3n::InvItem& it, int x, int y, int size) {
+    if (!it.enchanted()) return;
+    const ui::Image glow = assets().sprite("enchant_glow");
+    if (glow.ok()) {
+        list_.imageAdd(x - 8, y - 8, size + 16, size + 16, glow, hudRgba(110, 255, 140, 190));
+    } else {   // no 7.18 pack yet: a soft green halo, so the enchantment is still visible
+        for (int k = 0; k < 4; ++k)
+            list_.outline(x - 2 - k, y - 2 - k, size + 4 + 2 * k, size + 4 + 2 * k, hudRgba(70, 250, 100, 140 - 28 * k));
+    }
+}
+
 int GameUi::money(int xRight, int y, uint32_t copper, Font f) {
     const uint32_t gold = copper / 10000, silver = (copper / 100) % 100, cop = copper % 100;
     ui::Image coins[3] = {assets().sprite("coin_gold"), assets().sprite("coin_silver"), assets().sprite("coin_copper")};

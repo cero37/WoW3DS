@@ -20,6 +20,10 @@ enum : uint16_t {
     // arrives (Player::GetConfirmedMover: "no mover client side, is this a fake client?"); the real
     // client sends it on entering the world and after every map change (WoWee does the same).
     CMSG_SET_ACTIVE_MOVER = 0x26A,
+    // 7.20: the ack the 1.12 server waits for after a spline it started on us (Charge, knockback). Until it arrives
+    // vMaNGOS ignores every movement packet (Unit::HasPendingSplineDone), so the player stays where the spline began
+    // server-side: no attack lands (out of range), no new objects come in, and a relog puts us back at that spot.
+    CMSG_MOVE_SPLINE_DONE = 0x2C9,
 };
 
 // Forced-movement packets start with the player's GUID, packed on vMaNGOS/CMaNGOS
@@ -174,9 +178,20 @@ void GameSession::update(uint32_t nowMs) {
         const WorldObject* t = target_ ? objects.find(target_) : nullptr;
         if (!t || (t->isUnitLike() && t->dead())) attackWanted_ = attackOn_ = false;
     }
+    // 7.19: a charge landed (or we walked into reach): start the auto-attack it deferred, now the server will take it.
+    // A target that died or is gone drops it; so does a cast whose answer never came (below).
+    if (attackAfterCast_ && !cast.active) {
+        const WorldObject* t = target_ ? objects.find(target_) : nullptr;
+        const WorldObject* me = selfObject();
+        if (!t || !me || me->dead() || (t->isUnitLike() && t->dead()) ||
+            nowMs - attackAfterCastMs_ > 8000)   // it ran: a charge that never got us there starts nothing later
+            attackAfterCast_ = 0;
+        else if (!attackWanted_ && targetInMelee()) { attackAfterCast_ = 0; startAttack(nowMs); }
+    }
+    retryAttack(nowMs);   // 7.19: an attack the server refused from out of reach starts when we get there
     expireRolls(nowMs);   // 6.88
     // A cast whose SPELL_GO / failure never arrived must not block the bar for ever.
-    if (cast.active && nowMs - cast.startMs > cast.durMs + 2000) cast = CastState();
+    if (cast.active && nowMs - cast.startMs > cast.durMs + 2000) { cast = CastState(); attackAfterCast_ = 0; }
 }
 
 bool GameSession::takeTransferPending(uint32_t* map) {
@@ -197,6 +212,8 @@ bool GameSession::selfServerMove(uint32_t nowMs, float pos[3], float* yaw, bool*
 void GameSession::endSelfServerMove(const float pos[3], float yaw, uint32_t nowMs) {
     WorldObject* me = objects.find(self_);
     if (!me) me = objects.find(objects.self());
+    const bool taxi = me && me->taxiFlight();
+    const uint32_t splineId = me ? me->pathSplineId : 0;
     float end[3] = {pos[0], pos[1], pos[2]};
     float endYaw = yaw;
     if (me && me->pathActive) me->positionAt(nowMs, end, &endYaw);   // the exact end of the spline, not the last frame
@@ -215,6 +232,18 @@ void GameSession::endSelfServerMove(const float pos[3], float yaw, uint32_t nowM
         me->path.clear();
     }
     mover.reset(end[0], end[1], end[2], endYaw, nowMs);
+    // 7.20: the server started the spline on us and waits for CMSG_MOVE_SPLINE_DONE. Until it arrives vMaNGOS drops
+    // every movement packet (Unit::HasPendingSplineDone), so the player stays at the spline's start server-side: blows
+    // cannot land there (out of range), the grid does not load, and a relog puts us back. Not for a taxi: that one the
+    // server ends itself and the client had never confirmed it.
+    if (me) me->pathSplineId = 0;
+    if (!taxi && splineId) {
+        Writer w;
+        writeMovementInfo(w, mover.snapshot(nowMs));
+        w.u32(splineId);
+        w.f32(0.0f);   // the stock 1.12 client sends a float after the id; the server reads past it
+        send(CMSG_MOVE_SPLINE_DONE, w.b, nowMs);
+    }
 }
 
 bool GameSession::takeTeleport(float pos[3], float* orient) {

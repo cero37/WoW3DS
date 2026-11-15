@@ -73,6 +73,7 @@ struct WorldObject {
     // Server-driven spline (SMSG_MONSTER_MOVE or SPLINE_ENABLED in a movement block).
     std::vector<Vec3f> path;         // start point first
     uint32_t pathStartMs = 0, pathDurMs = 0;
+    uint32_t pathSplineId = 0;       // 7.20: the server's spline id (CMSG_MOVE_SPLINE_DONE echoes it back)
     bool pathActive = false, pathHasFinalO = false;
     bool pathSmooth = false;         // flying spline (taxi flights): Catmull-Rom through the points, like the server's MoveSpline
     float pathFinalO = 0;

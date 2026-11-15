@@ -1,5 +1,7 @@
 // selfmove_test — 7.13: the server moves our own character along a spline (Charge, taxi). GameSession exposes it while it
 // runs and puts the mover at its exact end when it stops; before this the client drew us at the last position we sent.
+// 7.20: the end of a server spline is acknowledged (CMSG_MOVE_SPLINE_DONE, with the spline id) — without it the server
+// ignores every later movement packet and keeps us where the spline began.
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -16,6 +18,8 @@ static int g_fail = 0, g_ok = 0;
 
 int main() {
     GameSession s;
+    std::vector<std::pair<uint16_t, Bytes>> out;
+    s.tap = [&](uint32_t, int dir, uint16_t op, const Bytes& d) { if (dir == 1) out.push_back({op, d}); };
     auto values = [&](Writer& w, const std::map<uint16_t, uint32_t>& f) {
         uint16_t top = 0;
         for (auto& kv : f) top = std::max<uint16_t>(top, kv.first);
@@ -62,11 +66,32 @@ int main() {
     CHECK(!s.selfServerMove(12000, p, &yaw, &taxi), "the spline is over");
     const WorldObject* self = s.objects.find(me);
     CHECK(self && !self->pathActive, "the self path is cleared");
+    // 7.20: the ack: MovementInfo (flags, time, x/y/z/o, fall time: 28 bytes here), the spline id, then the float
+    // the 1.12 client appends
+    Bytes ack;
+    for (auto& q : out) if (q.first == 0x2C9) ack = q.second;
+    CHECK(!ack.empty(), "CMSG_MOVE_SPLINE_DONE is sent");
+    if (ack.size() >= 36) {
+        float x = 0;
+        uint32_t id = 0;
+        std::memcpy(&x, &ack[8], 4);
+        std::memcpy(&id, &ack[28], 4);
+        CHECK(std::fabs(x - 20.0f) < 0.05f, "the ack carries the spline's end (%.2f)", x);
+        CHECK(id == 1, "and the spline id (%u)", id);
+        CHECK(ack.size() == 36, "movement info + id + float (%zu)", ack.size());
+    } else {
+        CHECK(false, "the ack is too short (%zu)", ack.size());
+    }
 
-    // a taxi has the same spline but asks for the mount camera
+    // a taxi has the same spline but asks for the mount camera — and the client does not acknowledge it
     create(0x00100000u);
     move(0, 10, 5000);
     CHECK(s.selfServerMove(1500, p, &yaw, &taxi) && taxi, "taxi flag is reported");
+    out.clear();
+    s.endSelfServerMove(p, 0, 7000);
+    bool taxiAck = false;
+    for (auto& q : out) taxiAck = taxiAck || q.first == 0x2C9;
+    CHECK(!taxiAck, "a taxi spline is not acknowledged");
 
     std::printf("%d ok, %d failed\n", g_ok, g_fail);
     return g_fail ? 1 : 0;

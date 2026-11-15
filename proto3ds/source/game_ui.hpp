@@ -187,6 +187,8 @@ private:
     Button& region(int x, int y, int w, int h, Act act, int arg);
     void window(int x, int y, int w, int h, bool dialog = false);
     void iconBox(int x, int y, int size, const ui::Image& icon, const std::string& name, uint32_t border, bool dim = false);
+    // 7.17: the green glow of an enchanted item, drawn behind its icon (bags, equipment, the card, the item pickers)
+    void itemGlow(const w3n::InvItem& it, int x, int y, int size);
     int money(int xRight, int y, uint32_t copper, ui::Font f = ui::Font::Small);   // coins; returns the width
     void header(w3n::GameSession& g, const std::string& title);
     void tabBar();
@@ -432,6 +434,8 @@ private:
     int tradeSel_ = -1;
     int petSel_ = -1;                  // UI stage 13: the selected entry in the pet window (PetCmdId, 100000 + spell)
     int feedSel_ = -1;                 // the food picked in the feed list (index into petFoodCandidates())
+    std::vector<uint64_t> petFeedShown_;   // 7.19: the food guids as the list was last drawn (the item queries fill in
+                                           // while it is open, so an index alone could point at another row)
     bool petFeedList_ = false;         // the pet window shows the food list
     int stableSel_ = -1;               // the stabled pet picked (slot)
     uint64_t windowNpc_ = 0;           // the NPC / object of the open stage-6 window (reset when it changes)

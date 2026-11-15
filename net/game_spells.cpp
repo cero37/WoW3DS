@@ -309,6 +309,7 @@ bool GameSession::corpseSpell(uint32_t spell) const {
 }
 
 bool GameSession::castSpell(uint32_t spell, uint32_t nowMs) {
+    attackAfterCast_ = 0;   // 7.19: a new action drops a pending charge attack (see combatAfterCast)
     if (spell == kSpellAttack) {
         if (attackWanted_) stopAttack(nowMs); else startAttack(nowMs);
         return true;
@@ -376,9 +377,24 @@ bool GameSession::castSpell(uint32_t spell, uint32_t nowMs) {
 void GameSession::combatAfterCast(uint32_t spell, uint32_t nowMs) {
     const uint8_t k = spellNames.combat(spell);
     if (k & SpellNames::kCombatStops) { attackWanted_ = false; return; }
-    if (!(k & SpellNames::kCombatMelee) || attackWanted_ || !target_) return;
+    // 7.19: Charge carries us to the target (8-25 yd), so the swing must wait until we are there. Whether the data calls
+    // it a melee ability or not (the name is the fallback, a localised spells.txt may keep another one), the spell is
+    // remembered here; game.cpp's update() starts the auto-attack once the target is in reach and a refused or
+    // interrupted cast drops it.
+    const bool gapCloser = spellNames.name(spell) == "Charge";
+    if (!(k & SpellNames::kCombatMelee) && !gapCloser) return;
+    if (attackWanted_ || !target_) return;
     const WorldObject* t = objects.find(target_);
     if (!t || !t->isUnitLike() || t->dead() || !enemyLike(*t)) return;
+    // Starting the attack together with the cast made the server answer "out of range"; as no swing ever began, the wish
+    // stayed on, and inCombat() counts it: the client then kept the combat stance, the combat controls and the Combat tab
+    // for good (a relog was the only way out).
+    const SpellNames::Range* rg = spellNames.range(spell);
+    if (gapCloser || (rg && rg->max > 8.0f)) {
+        attackAfterCast_ = spell;
+        attackAfterCastMs_ = nowMs ? nowMs : 1;
+        return;
+    }
     startAttack(nowMs);
 }
 
@@ -634,6 +650,8 @@ bool GameSession::handleSpells(uint16_t op, const Bytes& data, uint32_t nowMs) {
             // The server sends status 0 after every cast that worked: that is not a failure (it must neither
             // clear the cast bar of a spell with a cast time nor print anything).
             if (status == 0) return true;
+            // 7.19: the cast never went off (Charge while moving, out of line of sight ...): no sword work either
+            if (attackAfterCast_ == spell) attackAfterCast_ = 0;
             uint8_t res = r.u8();
             if (r.bad) return true;
             if (cast.spell == spell) cast = CastState();
@@ -677,6 +695,7 @@ bool GameSession::handleSpells(uint16_t op, const Bytes& data, uint32_t nowMs) {
             }
             if (g != self_) { unitCasts_.erase(g); return true; }
             uint8_t res = r.u8();
+            if (attackAfterCast_ == spell) attackAfterCast_ = 0;   // 7.19: an interrupted charge starts no auto-attack
             if (cast.active && cast.spell == spell) {
                 cast = CastState();
                 lastCastFail = res;

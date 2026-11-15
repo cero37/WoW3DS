@@ -743,6 +743,7 @@ void GameUi::drawItems(w3n::GameSession& g, const Input& in) {
             const w3n::InvItem& it = items[idx];
             const int x = 6 + (k % cols) * cell, y = kTop + 44 + (k / cols) * cell;
             const w3n::ItemInfo* info = g.itemInfo(it.entry);
+            itemGlow(it, x + 1, y + 1, cell - 4);
             iconBox(x + 1, y + 1, cell - 4, itemIcon(g, it.entry), g.itemName(it.entry), qualityColor(info ? info->quality : 1));
             if (it.equipped()) {   // worn: a gold corner and the slot's name under the icon
                 list_.rect(x + 1, y + 1, 9, 9, kGold);
@@ -778,6 +779,7 @@ void GameUi::drawItems(w3n::GameSession& g, const Input& in) {
         const w3n::InvItem& it = items[idx];
         const int x = 6 + (k % cols) * cell, y = kTop + 24 + (k / cols) * cell;
         const w3n::ItemInfo* info = g.itemInfo(it.entry);
+        itemGlow(it, x + 1, y + 1, cell - 4);
         iconBox(x + 1, y + 1, cell - 4, itemIcon(g, it.entry), g.itemName(it.entry), qualityColor(info ? info->quality : 1));
         if (const uint32_t cd = g.itemCooldownLeftMs(it.entry, in.nowMs)) {   // UI stage 12: potions, stones, trinkets
             const uint32_t total = std::max(cd, g.itemCooldownTotalMs(it.entry));
@@ -828,6 +830,7 @@ void GameUi::drawPaperDoll(w3n::GameSession& g, const Input& in) {
         if (idx >= 0) {
             const w3n::InvItem& it = items[idx];
             const w3n::ItemInfo* info = g.itemInfo(it.entry);
+            itemGlow(it, x, y, size);
             iconBox(x, y, size, itemIcon(g, it.entry), g.itemName(it.entry), qualityColor(info ? info->quality : 1));
             if (it.maxDurability && it.durability * 4 < it.maxDurability) list_.text(x + 2, y + 1, "!", kRed, true, Font::Normal);
             if (idx == selected_ && selTapped_) { list_.outline(x - 2, y - 2, size + 4, size + 4, kGold); }
@@ -1246,6 +1249,7 @@ void GameUi::drawCraft(w3n::GameSession& g, const Input& in) {
             const w3n::InvItem& it = items[idx];
             const int x = 6 + (k % cols) * cell, y = kTop + 58 + (k / cols) * cell;
             const w3n::ItemInfo* info = g.itemInfo(it.entry);
+            itemGlow(it, x + 1, y + 1, cell - 4);
             iconBox(x + 1, y + 1, cell - 4, itemIcon(g, it.entry), g.itemName(it.entry), qualityColor(info ? info->quality : 1));
             if (it.equipped()) {   // worn: a gold corner and the slot's name under the icon
                 list_.rect(x + 1, y + 1, 9, 9, kGold);

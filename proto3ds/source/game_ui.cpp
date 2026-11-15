@@ -1573,8 +1573,13 @@ void GameUi::doAction(w3n::GameSession& g, const Input& in, Act act, int arg, Ou
             break;
         case Act::PetFeed: petFeedList_ = arg != 0; page_ = 0; break;
         case Act::PetFeedPick: {
-            std::vector<w3n::InvItem> food = g.petFoodCandidates();
-            if (arg >= 0 && arg < (int)food.size() && g.feedPet(food[arg], now)) petFeedList_ = false;
+            // 7.19: feed the row that was drawn (its guid), not "the nth item of the list right now"
+            if (arg >= 0 && arg < (int)petFeedShown_.size()) {
+                const uint64_t guid = petFeedShown_[arg];
+                std::vector<w3n::InvItem> food = g.petFoodCandidates();
+                for (const w3n::InvItem& it : food)
+                    if (it.guid == guid) { if (g.feedPet(it, now)) petFeedList_ = false; break; }
+            }
             break;
         }
         case Act::StablePick: stableSel_ = arg; break;

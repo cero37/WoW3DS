@@ -344,7 +344,7 @@ bool ObjectTable::parseMovementBlock(Reader& r, WorldObject& o, uint32_t nowMs, 
             else if (sf & SPLINE_FINAL_TARGET) r.skip(8);
             else if (sf & SPLINE_FINAL_ANGLE) { o.pathFinalO = r.f32(); o.pathHasFinalO = true; }
             uint32_t passed = r.u32(), dur = r.u32();
-            r.u32();   // spline id
+            o.pathSplineId = r.u32();   // spline id (7.20: echoed back in CMSG_MOVE_SPLINE_DONE)
             uint32_t count = r.u32();
             if (r.bad || count > 256) { stats.lastError = "bad spline in movement block"; return false; }
             std::vector<Vec3f> pts;
@@ -462,12 +462,13 @@ bool ObjectTable::parseUpdate(const uint8_t* p, size_t n, uint32_t nowMs) {
 bool ObjectTable::parseMonsterMove(Reader& r, uint32_t nowMs) {
     uint64_t g = r.packedGuid();
     Vec3f start = readVec(r);
-    r.u32();   // spline id / server tick
+    const uint32_t splineId = r.u32();   // 7.20: echoed back in CMSG_MOVE_SPLINE_DONE
     uint8_t kind = r.u8();
     if (r.bad || !finite3(start)) return false;
     WorldObject tmp;
     WorldObject* op = find(g);
     WorldObject& o = op ? *op : tmp;
+    o.pathSplineId = splineId;
     float drawn[3] = {start.x, start.y, start.z};   // 6.83: where it was drawn a moment ago
     const bool hadPos = op && o.hasPos && !o.carried && o.type == ObjType::Unit;
     if (hadPos) o.positionAt(nowMs, drawn);

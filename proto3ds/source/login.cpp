@@ -237,6 +237,11 @@ void LoginFlow::network() {
     using ui::tr;
     w3n::ClientVersion ver = turtle_ ? w3n::ClientVersion::turtle() : w3n::ClientVersion();
     ver.authProtocol = (uint8_t)protocol_;
+    // 7.18: the game language the server localizes quests, NPC names and gossip by. The converter's glue.txt carries the
+    // one it was built with; an older pack of a vanilla client falls back to the interface language (Settings > Interface
+    // > Language). A Turtle client keeps its own enUS unless glue.txt names a language.
+    const std::string& gameLocale = texts_.gameLocale();
+    ver.locale = !gameLocale.empty() ? gameLocale : (turtle_ ? std::string("enUS") : std::string(ui::languageCode(ui::g_lang)));
     if (pending_ == Pending::Auth) {   // the "Connecting..." dialog was drawn last frame
         pending_ = Pending::None;
         bool ok = auth_.start(server_, account_, password_, ver);

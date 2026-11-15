@@ -185,6 +185,11 @@ void HudList::image(int x, int y, int w, int h, const ui::Image& im, uint32_t co
     quad(x, y, x + w, y + h, im.x, im.y, im.x + im.w, im.y + im.h, color, im.tex, kHudImage);
 }
 
+void HudList::imageAdd(int x, int y, int w, int h, const ui::Image& im, uint32_t color) {
+    if (!im.ok()) return;
+    quad(x, y, x + w, y + h, im.x, im.y, im.x + im.w, im.y + im.h, color, im.tex, kHudAdd);
+}
+
 void HudList::imagePart(int x, int y, int w, int h, const ui::Image& im, float fx0, float fy0, float fx1, float fy1, uint32_t color) {
     if (!im.ok()) return;
     quad(x, y, x + w, y + h, im.x + (int)(im.w * fx0 + 0.5f), im.y + (int)(im.h * fy0 + 0.5f), im.x + (int)(im.w * fx1 + 0.5f),
