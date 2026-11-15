@@ -144,6 +144,8 @@ Packs of two different runs do not mix: after a new `all.bat` replace all `map*.
 and your character. The server, the account, the last realm and character are remembered in `login.cfg`; **the password
 is never saved**.
 
+**FOR TURTLE WOW CHANGE YOUR PROTOCOL ON THE MAIN SCREEN**
+
 ### Updating
 
 Replace the `.3dsx` (or reinstall the CIA). When the release notes ask for it, also rerun the converter of the same
