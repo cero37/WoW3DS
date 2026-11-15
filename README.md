@@ -23,7 +23,6 @@ server).
 - [Windows GUI converter](#windows-gui-converter)
 - [Command-line converter](#command-line-converter)
 - [Quest areas data](#quest-areas-data)
-- [Tests](#tests)
 - [Legal](#legal)
 
 ## What works
@@ -349,32 +348,6 @@ only; the rest of the project is not changed by it as long as the file stays a s
 GPL-2.0-or-later), with world coordinates instead of zone percentages. Details:
 [`tools/questdb/README.txt`](tools/questdb/README.txt).
 
-## Tests
-
-No console and no game data are needed. The scripts are bash; on Windows run them from Git Bash, WSL or MSYS2.
-
-| Script | Checks |
-|---|---|
-| `converter/tests/run_pool_tests.sh <build dir>` | shared pool and `--all` |
-| `converter/tests/run_wmo_tests.sh <build dir>` | buildings, collision, previews |
-| `converter/tests/run_dungeon_tests.sh <build dir>` | instance maps, loading screens |
-| `converter/tests/run_player_tests.sh <build dir>` | player models |
-| `converter/tests/run_transport_tests.sh <build dir>` | ships and zeppelins |
-| `converter/tests/run_water_tests.sh <build dir>` | liquids |
-| `converter/tests/run_gui_tests.sh <build dir>` | GUI settings logic |
-| `proto3ds/tests/run_glue.sh [ui.w3dp] [glue.txt]` | login / character screens (screenshots and input checks) |
-| `proto3ds/tests/run_streaming.sh <build dir>` | streaming order (a synthetic city read at SD-card speed) |
-| `proto3ds/tests/run_fx.sh [wmo.w3dp]` | particles and lamp glows (run after `run_wmo_tests.sh`) |
-| `proto3ds/tests/run_spellfx.sh <build dir>` | spell effects |
-| `proto3ds/tests/run_swim.sh` | swimming with the liquid data |
-| `proto3ds/tests/run_streamer.sh <pack.w3dp>` | the streamer on the PC with sanitizers |
-| `proto3ds/tests/run_ui.sh`, `run_hud.sh`, `run_anim.sh` | UI, HUD and animation checks |
-| `net/tests/run_stage5.sh` | protocol tests against an independent Python server (includes `water_test`) |
-| `net/tests/run_713.sh` | weapon icons, Feed Pet, Cannibalize, Charge splines |
-| `tools/armcheck/armcheck.sh <files>` | ARM compile check (needs a devkitPro-like sysroot) |
-
-More `run_*.sh` scripts in those folders cover individual features (ground, terrain, world objects, PVS, quests, ...).
-Some net and UI tests replay a recorded real-server session that is not part of this repository.
 
 ## Legal
 
