@@ -8,8 +8,8 @@ stream.
 > Python server) and then tried on a real New 3DS against a real server. The [release notes](CHANGES_0.8.1.md) say what
 > changed in each version, including what has not been confirmed on hardware yet.
 
-No game data, textures, models or sounds are in this repository. You need your own legally obtained WoW 1.12.1 client
-(`Data/*.MPQ`) and a private server that speaks the 1.12 protocol (the client was developed against a vMaNGOS-compatible
+No game data, textures, models or sounds are in this repository. You need your own legally obtained WoW 1.12.1/1.18 client
+(`Data/*.MPQ`) and a private server that speaks the 1.12/turtle WoW protocol (the client was developed against a vMaNGOS-compatible
 server).
 
 ## Contents
