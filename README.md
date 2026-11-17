@@ -1,12 +1,11 @@
 # WoW3DS
 
-<<<<<<< HEAD
+HEAD
 A World of Warcraft **1.12.1 (Vanilla)** client for the **New Nintendo 3DS / New 2DS XL**, written from scratch in C++
 for devkitARM (libctru + citro3d), plus a PC converter that turns *your own* 1.12 game files into packs the console can
 =======
 A World of Warcraft **1.12.1 (Vanilla)** client for the **New Nintendo 3DS / New 2DS XL** Old3ds/2ds is not fully tested, written from scratch in C++
 for devkitARM (libctru + citro3d), plus a PC converter that turns *your own* 1.12/1.18 game files into packs the console can
->>>>>>> 4bfb5b35dc17c18488e5e6842832d68b3b776dba
 stream.
 
 > **Status: experimental hobby project.** Features are developed against PC tests (a stubbed libctru and an independent
