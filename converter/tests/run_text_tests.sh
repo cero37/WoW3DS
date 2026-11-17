@@ -27,7 +27,7 @@ grep -q "^R	186	7863	0	0	0	1	0	1	-	10940:1	4:0:256$" "$OUT/sd/recipes.txt" && gr
 # 6.19: skills.txt - the category is kept, the nameless row skipped, tabs / newlines of a description flattened
 printf 'S\t43\t6\tSwords\t\nS\t186\t11\tMining\tOre and rock\nS\t98\t10\tLanguage: Common\t\n' > "$OUT/skills.expect"
 diff <(grep "^S" "$OUT/sd/skills.txt") "$OUT/skills.expect" && echo "SKILLS: PASS"
-# UI stage 10: ground spells (Blizzard by its Targets mask, the bomb by its implicit target; not the nova, not the bolt)
+# UI stage 10: ground spells (Blizzard by its Targets mask, the bomb by its implicit target; not the self-centred nova, not the bolt)
 printf '@ground\t10\t30.0\t10.0\n@ground\t4064\t15.0\t5.0\n' > "$OUT/ground.expect"
 diff <(grep "^@ground" "$OUT/sd/spells.txt") "$OUT/ground.expect" && echo "GROUND SPELLS: PASS"
 # 7.16: item enchantment names for the item cards (Shiny Bauble -> the pole shows "Fishing Lure +25")
@@ -35,8 +35,8 @@ grep -q "$(printf '@enchant\t263\tFishing Lure +25')" "$OUT/sd/spells.txt" && ec
 # 7.16: an item used on another item (Shiny Bauble on a fishing pole): class, subclass mask, inventory mask, main hand
 printf '@item\t8087\t2\t1048576\t0\t1\n@item\t2803\t2\t128\t0\t1\n' > "$OUT/item.expect"
 diff <(grep "^@item" "$OUT/sd/spells.txt") "$OUT/item.expect" && echo "ITEM-TARGET SPELLS: PASS"
-# 5.48: spells cast without a unit target
-printf '@self\t6343\n' > "$OUT/self.expect"
+# 5.48/7.21: spells cast without a unit target - Thunder Clap and the self-centred nova (implicit targets 22 and 15)
+printf '@self\t122\n@self\t6343\n' > "$OUT/self.expect"
 diff <(grep "^@self" "$OUT/sd/spells.txt") "$OUT/self.expect" && echo "SELF-CAST SPELLS: PASS"
 # 6.20: spelldesc.bin - descriptions with the numbers in, a buff's tooltip when there is no description, sorted by id
 python3 - "$OUT/sd/spelldesc.bin" <<'PY'

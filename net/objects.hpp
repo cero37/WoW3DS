@@ -80,6 +80,13 @@ struct WorldObject {
     // Transports (stage 5.21). A GO transport: the server's path progress when its create block arrived (UPDATEFLAG_TRANSPORT).
     uint32_t transportProgress = 0;
     bool hasTransportProgress = false;
+    // A path transport remains known after OUT_OF_RANGE (often a continent change).
+    // Keep its real GUID and phase, but never use its stale position without a path pose.
+    bool transportOutOfRange = false;
+    bool restoredTransport = false;   // real GUID / phase from a validated previous-session snapshot
+    // 7.28: a transport the client put on its path itself, because the server did not announce it yet (the phase comes from
+    // the previous session's memory). Dropped as soon as the real object arrives, and not drawn outside its own map.
+    bool predicted = false;
     float stationary[4] = {0, 0, 0, 0};   // position + facing in the create block of a transport (UPDATEFLAG_TRANSPORT): where an elevator rests
     // A unit standing on a transport (MoveFlag::OnTransport): ObjectTable::tickTransports keeps mv at the world position
     // computed from the transport's pose and the unit's offset, and 'carried' turns the usual extrapolation off.
@@ -138,6 +145,10 @@ struct WorldObject {
 
     // ---- game objects (stage 5.41)
     uint32_t goType() const { return field(UF::GAMEOBJECT_TYPE_ID); }
+    bool isPathTransport() const {
+        return type == ObjType::GameObject && hasTransportProgress &&
+               (goType() == 15 || (guid >> 48) == 0x1FC0u);
+    }
     // 1.12: 0 = GO_STATE_ACTIVE (a door that is open, a button pressed, a chest opened), 1 = GO_STATE_READY (closed / ready), 2 = alternative
     uint32_t goState() const { return field(UF::GAMEOBJECT_STATE); }
     // GAMEOBJECT_ROTATION: the quaternion (x y z w) the server places the model with. For an upright object it is only the
@@ -188,6 +199,34 @@ public:
 
     // Objects created since the last call (the session sends name/creature queries for them).
     std::vector<uint64_t> takeCreated() { std::vector<uint64_t> v; v.swap(created_); return v; }
+    // 7.27: every create / loss of a transport object, for the perf log - it answers "did the client have the zeppelin
+    // while it stood at the stop".
+    struct TransportEvent {
+        uint32_t ms = 0;
+        uint8_t kind = 0;   // 0 create, 1 out of range, 2 destroyed, 3 replaced, 4 retained out of range
+        uint64_t guid = 0;
+        uint32_t entry = 0, display = 0, progress = 0;
+        float x = 0, y = 0, z = 0;
+    };
+    std::vector<TransportEvent> takeTransportEvents() { std::vector<TransportEvent> v; v.swap(transportEvents_); return v; }
+    // 7.28: every block of every SMSG_UPDATE_OBJECT, for the perf log (what the server really sent, blocked by blocked).
+    // kind 0: a block (type: 0 values, 1 movement, 2 create, 3 out of range, 4 near); kind 1: a packet summary.
+    struct BlockNote {
+        uint8_t kind = 0, type = 0, objType = 0;
+        uint64_t guid = 0;
+        uint32_t entry = 0, display = 0, size = 0;
+    };
+    std::vector<BlockNote> takeBlockNotes() { std::vector<BlockNote> v; v.swap(blockNotes_); return v; }
+    // 7.28: transports from the previous session - the client puts them on their paths itself when the server is silent,
+    // and drops them the moment a real create for the same entry arrives.
+    struct TransportMemory { uint32_t entry = 0, display = 0, progress = 0; uint64_t guid = 0; };
+    // All progress values are measured at nowMs, NOT at each object's last create packet.
+    std::vector<TransportMemory> transportMemory(uint32_t nowMs) const;
+    uint64_t restoreTransport(const TransportMemory& memory, uint32_t nowMs);
+    void dropRestoredTransports();
+    uint64_t addPredictedTransport(uint32_t entry, uint32_t display, uint32_t progressMs, uint32_t nowMs);
+    void dropPredictedTransports(uint32_t entry);   // entry 0: all of them
+    bool hasTransportEntry(uint32_t entry) const;
     bool hasPlayerName(uint64_t g) const { return playerNames_.count(g) != 0; }
     bool hasCreatureInfo(uint32_t entry) const { return creatureNames_.count(entry) != 0; }
     bool hasGameObjectInfo(uint32_t entry) const { return goNames_.count(entry) != 0; }
@@ -232,6 +271,10 @@ private:
     std::unordered_map<uint32_t, std::string> goNames_;
     std::unordered_map<uint32_t, GoInfo> goInfo_;
     std::vector<uint64_t> created_;
+    std::vector<TransportEvent> transportEvents_;
+    std::vector<BlockNote> blockNotes_;
+    void noteBlock(const BlockNote& n);
+    void noteTransport(uint8_t kind, const WorldObject& o, uint64_t guid);
     std::unordered_map<uint64_t, TransportPose> poses_;
     std::string transportsFile_;
     bool transportsTried_ = false;

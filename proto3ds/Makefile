@@ -10,11 +10,23 @@ endif
 TOPDIR ?= $(CURDIR)
 include $(DEVKITARM)/3ds_rules
 
+# 7.24: OpenDSP (BSD-2-Clause) replaces the proprietary DSP firmware: no dspfirm.cdc dump on the SD card. The library
+# is fetched and built on the first `make` (see the opendsp target below) and linked before libctru.
+DEVKITARM := $(patsubst %/,%,$(DEVKITARM))
+ifeq ($(strip $(DEVKITPRO)),)
+export DEVKITPRO := $(patsubst %/devkitARM,%,$(DEVKITARM))
+endif
+OPENDSP_REL := extern/OpenDSP/library
+OPENDSP_ROOT := $(CURDIR)/extern/OpenDSP
+OPENDSP_ABS := $(CURDIR)/$(OPENDSP_REL)
+OPENDSP_LIB := $(OPENDSP_ABS)/lib/libopendsp.a
+OPENDSP_TAG ?= v1.3.1
+
 TARGET		:=	w3dproto
 BUILD		:=	build
 SOURCES		:=	source ../net
 DATA		:=	data
-INCLUDES	:=	include ../common ../net
+INCLUDES	:=	include ../common ../net $(OPENDSP_REL)/include
 GRAPHICS	:=
 ROMFS		:=	romfs
 
@@ -43,9 +55,9 @@ ASFLAGS	:=	-g $(ARCH)
 LINEAR_WRAP := -Wl,--wrap=linearAlloc,--wrap=linearMemAlign,--wrap=linearRealloc,--wrap=linearGetSize,--wrap=linearFree,--wrap=linearSpaceFree
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) $(LINEAR_WRAP)
 
-LIBS	:= -lcitro3d -lctru -lm
+LIBS	:= -lopendsp -lcitro3d -lctru -lm
 
-LIBDIRS	:= $(CTRULIB)
+LIBDIRS	:= $(OPENDSP_ABS) $(CTRULIB)
 
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))
@@ -104,7 +116,7 @@ ifneq ($(ROMFS),)
 	export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 endif
 
-.PHONY: all clean synth cia
+.PHONY: all clean synth cia opendsp
 
 # Stage 6.32: the CIA (cia/w3dproto.rsf: 178 MB on the New 3DS, 804 MHz + L2). Needs makerom and bannertool in the PATH
 # (or MAKEROM= / BANNERTOOL=). The same .elf as the .3dsx; the romfs folder goes into the CIA itself.
@@ -133,7 +145,18 @@ cia: all
 		-exefslogo -target t -major $(word 1,$(CIA_VERSION)) -minor $(word 2,$(CIA_VERSION)) -micro $(word 3,$(CIA_VERSION))
 	@echo built ... $(CIA_NAME).cia "($(CIA_MEMORY))"
 
-all: $(BUILD)
+# 7.24: fetch and build OpenDSP once (git and the usual DEVKITPRO environment are needed). The library and its embedded
+# firmware are BSD-2-Clause; see OPENDSP_LICENSE.txt. It replaces the proprietary dspfirm.cdc dump.
+opendsp:
+	@if [ ! -f "$(OPENDSP_LIB)" ]; then \
+		if [ ! -f "$(OPENDSP_ABS)/Makefile" ]; then \
+			echo "fetching OpenDSP ..."; \
+			git clone --depth 1 --branch $(OPENDSP_TAG) https://github.com/Cellenseres/OpenDSP.git "$(OPENDSP_ROOT)" || exit 1; \
+		fi; \
+		$(MAKE) --no-print-directory -C "$(OPENDSP_ABS)" || exit 1; \
+	fi
+
+all: $(BUILD) opendsp
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 $(BUILD):

@@ -37,7 +37,6 @@ bool PadConfig::load(const char* path) {
         else if (!strcmp(key, "back") && v >= 0.1f && v <= 1.0f) backThreshold = v;
         else if (!strcmp(key, "face")) faceMovement = v != 0;
         else if (!strcmp(key, "toggle")) toggleModifiers = v != 0;
-        else if (!strcmp(key, "dpadspells")) dpadSpells = v != 0;   // 7.17: the Old 3DS D-pad as the hotbar
         else if (!strcmp(key, "invert")) invertY = v != 0;
         else if (!strcmp(key, "camspeed") && v >= 0.3f && v <= 6.0f) camSpeed = v;
         else if (!strcmp(key, "tracker")) questTracker = v != 0;
@@ -46,6 +45,10 @@ bool PadConfig::load(const char* path) {
         else if (!strcmp(key, "horizon") && v >= 0 && v <= 2) horizon = (int)v;
         else if (!strcmp(key, "crowd") && v >= 0 && v <= 3) crowd = (int)v;
         else if (!strcmp(key, "topmode") && v >= 0 && v <= 2) topMode = (int)v;
+        else if (!strcmp(key, "fsr") && v >= 0 && v <= 4) fsr = (int)v;   // 7.27: off / sharp / 320 / 240 / 200
+        else if (!strcmp(key, "cas") && v >= 0 && v <= 1) cas = (int)v;   // 7.28: PICA-CAS on/off
+        else if (!strcmp(key, "casstr") && v >= 0 && v <= 4) casStrength = (int)v;
+        else if (!strcmp(key, "casgate") && v >= 0 && v <= 2) casGate = (int)v;
         else if (!strcmp(key, "doodads")) doodads = v != 0;
         else if (!strcmp(key, "stats")) showStats = v != 0;
         else if (!strcmp(key, "effects")) effects = v < 0 ? 0 : v > 2 ? 2 : v;
@@ -75,18 +78,19 @@ bool PadConfig::load(const char* path) {
         else if (!strcmp(key, "hlod") && (v == 0 || (v >= 80 && v <= 600))) hlod = (int)v;   // 6.57
     }
     fclose(f);
+    if (fsr == 0) cas = 0;   // 7.28: PICA-CAS needs a base mode (Sharp/320/240/200)
     return true;
 }
 
 std::string PadConfig::text() const {
     char b[1024];
-    int n = snprintf(b, sizeof b, "scheme %d\ndead %.2f\nrun %.2f\nback %.2f\nface %d\ntoggle %d\ndpadspells %d\ninvert %d\ncamspeed %.2f\ntracker %d\n",
+    int n = snprintf(b, sizeof b, "scheme %d\ndead %.2f\nrun %.2f\nback %.2f\nface %d\ntoggle %d\ninvert %d\ncamspeed %.2f\ntracker %d\n",
             scheme == PadScheme::Old3DS ? 1 : 0, stickDead, runThreshold, backThreshold, faceMovement ? 1 : 0,
-            toggleModifiers ? 1 : 0, dpadSpells ? 1 : 0, invertY ? 1 : 0, camSpeed, questTracker ? 1 : 0);
+            toggleModifiers ? 1 : 0, invertY ? 1 : 0, camSpeed, questTracker ? 1 : 0);
     n += snprintf(b + n, sizeof b - (size_t)n, "language %d\ndist %d\ncrowd %d\ndoodads %d\nbigtext %d\ndimhud %d\nautotabs %d\nbubbles %d\n", lang, drawDist, crowd, doodads ? 1 : 0,
             bigText ? 1 : 0, dimHud ? 1 : 0, autoTabs ? 1 : 0, chatBubbles ? 1 : 0);
-    n += snprintf(b + n, sizeof b - (size_t)n, "music %d\nsfx %d\nambience %d\ntopmode %d\neffects %d\nstats %d\nground %d\nperflog %d\ngpuearly %d\nvsync %d\nfadein %d\nhorizon %d\nstaticbatch %d\nlodpx %.2f\ndoodadrange %.1f\ndoodadwide %.2f\npvs %d\ninteriors %d\nhlod %d\n", musicVol, sfxVol,
-            ambVol, topMode, effects, showStats ? 1 : 0, groundCast, perfLog ? 1 : 0, gpuKick ? 1 : 0, vsync ? 1 : 0, fadeIn ? 1 : 0, horizon,
+    n += snprintf(b + n, sizeof b - (size_t)n, "music %d\nsfx %d\nambience %d\ntopmode %d\nfsr %d\ncas %d\ncasstr %d\ncasgate %d\neffects %d\nstats %d\nground %d\nperflog %d\ngpuearly %d\nvsync %d\nfadein %d\nhorizon %d\nstaticbatch %d\nlodpx %.2f\ndoodadrange %.1f\ndoodadwide %.2f\npvs %d\ninteriors %d\nhlod %d\n", musicVol, sfxVol,
+            ambVol, topMode, fsr, cas, casStrength, casGate, effects, showStats ? 1 : 0, groundCast, perfLog ? 1 : 0, gpuKick ? 1 : 0, vsync ? 1 : 0, fadeIn ? 1 : 0, horizon,
             staticBatch ? 1 : 0, lodPixels, doodadRange, doodadWide, pvs ? 1 : 0, interiorFar ? 1 : 0, hlod);
     if (n < (int)sizeof b) n += snprintf(b + n, sizeof b - (size_t)n, "pace %d\nautodetail %d\nghostfog %.2f\n", pace, autoDetail ? 1 : 0, ghostFog);   // 6.71
     return std::string(b, (size_t)std::max(0, std::min(n, (int)sizeof b - 1)));
@@ -122,7 +126,7 @@ PadOut Pad::update(const PadInput& in, const PadConfig& cfg, bool inCombat, floa
         i.down &= ~(u32)(KEY_DLEFT | KEY_DRIGHT | KEY_DUP | KEY_DDOWN);
         i.held &= ~(u32)(KEY_DLEFT | KEY_DRIGHT | KEY_DUP | KEY_DDOWN);
     }
-    PadOut o = cfg.scheme == PadScheme::Old3DS ? old3ds(i, cfg, dt) : new3ds(i, cfg, inCombat, camYaw, dt);
+    PadOut o = cfg.scheme == PadScheme::Old3DS ? old3ds(i, cfg, camYaw, dt) : new3ds(i, cfg, inCombat, camYaw, dt);
     o.tabDelta = tabs.tabDelta;
     o.freeCamera = tabs.freeCamera;
     return o;
@@ -212,7 +216,7 @@ PadOut Pad::new3ds(const PadInput& in, const PadConfig& cfg, bool inCombat, floa
     return o;
 }
 
-PadOut Pad::old3ds(const PadInput& in, const PadConfig& cfg, float dt) {
+PadOut Pad::old3ds(const PadInput& in, const PadConfig& cfg, float camYaw, float dt) {
     PadOut o;
     const u32 d = in.down, h = in.held;
     o.jump = d & KEY_B;
@@ -220,49 +224,62 @@ PadOut Pad::old3ds(const PadInput& in, const PadConfig& cfg, float dt) {
     o.toggleAttack = d & KEY_R;
     o.interact = d & KEY_A;
     o.menu = d & KEY_START;
-    if (d & KEY_X) oldSet_ = (oldSet_ + 1) % kPadSets;
+    // 7.25: X is the hotbar set on a tap and the target's menu on a hold (the New 3DS has X for that menu in set 0).
+    // The set changes on release so a hold does not also switch it.
+    if (d & KEY_X) { xHeldMs_ = 0; xMenu_ = false; }
+    if (h & KEY_X) {
+        xHeldMs_ += (uint32_t)(dt * 1000.0f);
+        if (!xMenu_ && xHeldMs_ >= 400) { o.context = true; xMenu_ = true; }
+    }
+    if ((in.up & KEY_X) && !xMenu_) oldSet_ = (oldSet_ + 1) % kPadSets;
+    if (!(h & KEY_X) && !(d & KEY_X)) { xHeldMs_ = 0; xMenu_ = false; }
     o.set = oldSet_;
-    // camera = the character: the C-Stick and (unless the D-pad is the hotbar) D-pad left/right look, D-pad up/down zoom
+    // 7.26: L + Y aims the target ring with the Circle Pad, as L / R + C-Stick does on the New 3DS. Releasing Y (or L)
+    // takes the aimed unit; a plain L is still "next target" and a plain Y-hold is still the camera.
+    const bool aim = (h & KEY_L) && (h & KEY_Y);
+    o.mode = aim ? PadOut::Enemy : PadOut::None;
+    if (lastMode_ != PadOut::None && !aim) o.released = lastMode_;
+    lastMode_ = o.mode;
+    const float aimLen = sqrtf(in.lx * in.lx + in.ly * in.ly);
+    if (aim && aimLen > 0.3f) {
+        o.aiming = true;
+        o.aimYaw = camYaw + atan2f(-in.lx, in.ly);
+    }
+    // The camera is the character: the D-pad is the hotbar. Hold Y to look around with the Circle Pad (the D-pad then
+    // looks / zooms as before), a tap of Y is chat; with L held, Y aims instead.
     float look = 0, lookY = 0;
-    if (fabsf(in.rx) > cfg.stickDead) look = in.rx;
+    if (fabsf(in.rx) > cfg.stickDead) look = in.rx;   // (the C-Stick is absent on a real Old 3DS; harmless)
     if (fabsf(in.ry) > cfg.stickDead) lookY = in.ry;
-    bool holdLook = false;
-    if (!cfg.dpadSpells) {
-        if (h & KEY_DLEFT) look = -1;
-        if (h & KEY_DRIGHT) look = 1;
-        if (h & KEY_DUP) o.zoom = -1;
-        if (h & KEY_DDOWN) o.zoom = 1;
-        o.nextTarget = d & KEY_L;
-        o.chat = d & KEY_Y;
-    } else {
-        // D-pad = hotbar: hold Y to look around with the Circle Pad (the D-pad then looks / zooms as before), a tap of
-        // Y is chat
-        holdLook = (h & KEY_Y) != 0;
-        if (holdLook) {
+    const bool holdLook = (h & KEY_Y) != 0;
+    if (holdLook) {
+        if (aim) {
+            yLook_ = true;   // the Y-held aim moved the target ring: its release is not chat
+        } else {
             if (fabsf(in.lx) > cfg.stickDead) { look = in.lx; yLook_ = true; }
             if (fabsf(in.ly) > cfg.stickDead) { lookY = in.ly; yLook_ = true; }
             if (h & KEY_DLEFT) { look = -1; yLook_ = true; }
             if (h & KEY_DRIGHT) { look = 1; yLook_ = true; }
             if (h & KEY_DUP) { o.zoom = -1; yLook_ = true; }
             if (h & KEY_DDOWN) { o.zoom = 1; yLook_ = true; }
-        } else if (d & KEY_Y) {
-            yLook_ = false;
         }
-        o.nextTarget = d & KEY_L;
-        if ((in.up & KEY_Y) && yDown_) {
-            if (!yLook_) o.chat = true;
-            yLook_ = false;
-        }
-        yDown_ = holdLook;
+    } else if (d & KEY_Y) {
+        yLook_ = false;
     }
+    if (aim) { look = lookY = 0; }   // aiming takes the Circle Pad, not the camera
+    o.nextTarget = aim ? false : (d & KEY_L);
+    if ((in.up & KEY_Y) && yDown_) {
+        if (!yLook_) o.clearTarget = true;   // 7.26: a tap of Y clears the target (chat stays in START / touch)
+        yLook_ = false;
+    }
+    yDown_ = holdLook;
     float turn = fabsf(in.lx) > cfg.stickDead ? in.lx : 0.0f;
-    if (holdLook) turn = 0;   // the stick is the camera now, not the character
-    o.camYaw = -look * cfg.camSpeed * dt - turn * 2.2f * dt;
-    o.camPitch = (cfg.invertY ? -lookY : lookY) * 1.2f * dt;
-    o.turn = -turn;
+    if (holdLook) turn = 0;   // the stick is the camera (or the aimed unit), not the character
+    o.camYaw = aim ? 0.0f : -look * cfg.camSpeed * dt - turn * 2.2f * dt;
+    o.camPitch = aim ? 0.0f : (cfg.invertY ? -lookY : lookY) * 1.2f * dt;
+    o.turn = aim ? 0.0f : -turn;
     if (holdLook) return o;
     for (int b = 0; b < 4 && o.slot < 0; ++b)   // D-pad = spells: 4 slots of the set X picked
-        if (cfg.dpadSpells && (d & kDpad[b])) o.slot = o.set * kPadButtons + b;
+        if (d & kDpad[b]) o.slot = o.set * kPadButtons + b;
     if (in.ly > kDirCut) o.dir = w3n::MoveFlag::Forward;
     else if (in.ly < -kDirCut) o.dir = w3n::MoveFlag::Backward;
     return o;

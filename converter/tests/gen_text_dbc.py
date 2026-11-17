@@ -43,7 +43,7 @@ def sref(t):
     off = len(strings); strings += t.encode() + b"\0"; return off
 spells = []
 spell_text = {}   # 7.14: English texts to copy into the esES columns of the synthetic DBC
-def spell(i, name, rank, effect=0, trigger=0, attr=0, targets=0, rng=0, implA=0, radius=0, rec=0, cat=0, catRec=0, desc='', tip='', base=0, die=0, dur=0, cast=0, dmg=0, attr2=0, eqClass=-1, eqSub=0, eqInv=0, itemType=0, reagent=0):
+def spell(i, name, rank, effect=0, trigger=0, attr=0, targets=0, rng=0, implA=0, implB=0, radius=0, rec=0, cat=0, catRec=0, desc='', tip='', base=0, die=0, dur=0, cast=0, dmg=0, attr2=0, eqClass=-1, eqSub=0, eqInv=0, itemType=0, reagent=0):
     r = [0] * 173
     r[0] = i; r[120] = sref(name); r[129] = sref(rank) if rank else 0
     spell_text[i] = (name, rank, desc, tip)
@@ -51,7 +51,7 @@ def spell(i, name, rank, effect=0, trigger=0, attr=0, targets=0, rng=0, implA=0,
     r[18] = cast                                                   # 6.64: CastingTimeIndex
     r[164] = dmg; r[8] = attr2                                     # 6.87: DmgClass, AttributesEx2
     r[58] = eqClass & 0xFFFFFFFF; r[59] = eqSub; r[60] = eqInv; r[103] = itemType; r[42] = reagent; r[50] = 1 if reagent else 0   # 6.90
-    r[13] = targets; r[36] = rng; r[82] = implA; r[88] = radius   # UI stage 10: Targets, RangeIndex, ImplicitTargetA, radius
+    r[13] = targets; r[36] = rng; r[82] = implA; r[85] = implB; r[88] = radius   # UI stage 10: Targets, RangeIndex, ImplicitTargetA/B, radius
     r[19] = rec; r[2] = cat; r[20] = catRec                        # UI stage 12: RecoveryTime, Category, CategoryRecoveryTime
     r[138] = sref(desc) if desc else 0; r[147] = sref(tip) if tip else 0   # 6.20: Description, ToolTip
     r[76] = base & 0xFFFFFFFF; r[64] = die; r[30] = dur                     # BasePoints, DieSides, DurationIndex
@@ -69,8 +69,9 @@ spell(10, "Blizzard", "Rank 1", effect=27, targets=0x40, rng=4, implA=28, radius
 spell(4064, "Rough Copper Bomb", "", effect=2, rng=5, implA=16, radius=8)
 spell(122, "Frost Nova", "Rank 1", effect=2, rng=1, implA=22, radius=13)
 spell(116, "Frostbolt", "Rank 1", effect=2, rng=4, implA=6)
-# 5.48: no unit target - Thunder Clap hits the enemies around the caster (implicit 36); the bolt above needs one (6)
-spell(6343, "Thunder Clap", "Rank 1", effect=2, implA=36)
+# 5.48: no unit target - Thunder Clap hits the enemies around the caster (implicit 22: the source, 15: enemies there);
+# the bolt above needs one (6)
+spell(6343, "Thunder Clap", "Rank 1", effect=2, implA=22, implB=15)
 # UI stage 12: cooldowns - Charge 15 s, a potion's spell (category 4, 2 min), an "on event" one (Stealth)
 spell(100, "Charge", "Rank 1", effect=2, rec=15000)
 spell(439, "Healing Potion", "", effect=10, cat=4, catRec=120000)

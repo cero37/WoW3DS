@@ -421,6 +421,10 @@ void GameUi::useSlot(w3n::GameSession& g, const Input& in, int slot, Output& out
 
 void GameUi::dropOnSlot(const Input& in, int slot, Output& out) {
     if (!in.bars || !padSlotBindable(slot) || !drag_.kind) return;
+    if (in.cfg && in.cfg->scheme == PadScheme::Old3DS) {   // 7.23: the face buttons are fixed on the Old 3DS
+        const int b = slot % 8;
+        if (b >= 4) return;
+    }
     ActionSlot a{drag_.kind >= 1 && drag_.kind <= 4 ? drag_.kind : (uint8_t)ActionSlot::Item, drag_.id};   // 1 spell, 2 item, 3 pet command, 4 pet spell
     in.bars->bind(slot, a);
     out.layoutChanged = true;
@@ -881,6 +885,7 @@ GameUi::Output GameUi::updateInner(w3n::GameSession& g, const Input& in, bool wa
         if (t) g.setTarget(t, in.nowMs);
         dirty_ = true;
     }
+    if (p->clearTarget) { g.setTarget(0, in.nowMs); aim_ = 0; dirty_ = true; }   // 7.26: Old 3DS Y tap
     if (p->toggleAttack || p->attack) { pressSpell(g, w3n::kSpellAttack, in, out); dirty_ = true; }
     if (p->pageDelta && in.bars) {
         in.bars->turnPage(p->pageDelta);
@@ -1297,8 +1302,6 @@ void GameUi::doAction(w3n::GameSession& g, const Input& in, Act act, int arg, Ou
                 case 21: in.cfg->faceMovement = false; break;
                 case 30: in.cfg->toggleModifiers = false; break;
                 case 31: in.cfg->toggleModifiers = true; break;
-                case 41: in.cfg->dpadSpells = false; break;   // 7.17: the Old 3DS D-pad looks around / is the hotbar
-                case 42: in.cfg->dpadSpells = true; break;
                 case 40: in.cfg->invertY = !in.cfg->invertY; break;
                 case 50: in.cfg->camSpeed = std::max(0.6f, in.cfg->camSpeed - 0.3f); break;
                 case 51: in.cfg->camSpeed = std::min(4.5f, in.cfg->camSpeed + 0.3f); break;
@@ -1319,6 +1322,16 @@ void GameUi::doAction(w3n::GameSession& g, const Input& in, Act act, int arg, Ou
                 case 210: case 211: case 212: in.cfg->horizon = arg - 210; out.graphicsChanged = true; break;   // 6.34b
                 case 80: case 81: case 82: case 83: in.cfg->crowd = arg - 80; out.graphicsChanged = true; break;
                 case 95: case 96: case 97: in.cfg->topMode = arg - 95; out.graphicsChanged = true; break;
+                case 220: in.cfg->fsr = 0; in.cfg->cas = 0; out.graphicsChanged = true; break;   // Off: the whole chain off
+                case 221: case 222: case 223: case 224: in.cfg->fsr = arg - 220; out.graphicsChanged = true; break;   // 7.27
+                case 225: in.cfg->cas = 0; out.graphicsChanged = true; break;   // 7.28: PICA-CAS
+                case 226:   // CAS needs a base mode: turn on Sharp (1:1) when the chain was off
+                    in.cfg->cas = 1;
+                    if (in.cfg->fsr == 0) in.cfg->fsr = 1;
+                    out.graphicsChanged = true;
+                    break;
+                case 227: case 228: case 229: case 230: case 231: in.cfg->casStrength = arg - 227; out.graphicsChanged = true; break;
+                case 232: case 233: case 234: in.cfg->casGate = arg - 232; out.graphicsChanged = true; break;
                 case 90: in.cfg->doodads = !in.cfg->doodads; out.graphicsChanged = true; break;
                 case 170: case 171: case 172: in.cfg->effects = arg - 170; out.graphicsChanged = true; break;
                 case 100: in.cfg->lang = (in.cfg->lang + 1) % ui::kLangCount; ui::setLanguage(in.cfg->lang); break;

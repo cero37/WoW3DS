@@ -67,7 +67,7 @@ server).
 - **Controls:** a controller scheme built for the 3DS ("New 3DS" layout, or "Old 3DS" for the Old 3DS), touch-screen UI
   on the bottom screen; an optional ConsolePort skin (round crossbar buttons, the segmented experience bar) from your own
   copy of the addon. Top screen: normal 400x240, wide 800x240 or stereoscopic 3D.
-- **Sound:** interface sounds, footsteps, world sounds, voices, zone music and ambience (DSP firmware dump required).
+- **Sound:** interface sounds, footsteps, world sounds, voices, zone music and ambience (OpenDSP, linked in: no DSP firmware dump and no DSP1 homebrew needed).
 
 **Not done yet:** Warden anticheat — a server that requires it drops the connection.
 
@@ -78,13 +78,13 @@ server).
 <<<<<<< HEAD
 - A **New Nintendo 3DS / New 2DS XL** (an Old 3DS works with the Old 3DS scheme, but slowly) with custom firmware
   (Luma3DS). The `.3dsx` needs the **Homebrew Launcher**; a CIA needs a title installer such as **FBI**.
-- `sdmc:/3ds/dspfirm.cdc` for sound: run the **DSP1** homebrew once if you do not have it.
+- Sound works out of the box: the build links **OpenDSP**, an open-source DSP firmware (no `dspfirm.cdc` dump and no DSP1 homebrew needed).
 - An SD card (FAT32) with room for the packs: a few hundred MB for a test region, several GB for the whole game.
 - Your own **WoW 1.12.1 client** (the `Data` folder with the `.MPQ` files) and a Windows PC.
 =======
 - A **New Nintendo 3DS / New 2DS XL** (an Old 3DS works with the Old 3DS scheme) with custom firmware
   (Luma3DS). CIA needs a title installer such as **FBI**.
-- `sdmc:/3ds/dspfirm.cdc` for sound: run the **DSP1** homebrew once if you do not have it.
+- Sound works out of the box: the build links **OpenDSP**, an open-source DSP firmware (no `dspfirm.cdc` dump and no DSP1 homebrew needed).
 - An SD card (FAT32) with room for the packs: a few hundred MB for a test region, several GB for the whole game.
 - Your own **WoW 1.12.1/ 1.18  client** (the `Data` folder with the `.MPQ` files) and a Windows PC.
 >>>>>>> 4bfb5b35dc17c18488e5e6842832d68b3b776dba
@@ -222,20 +222,23 @@ toggle* in the Settings.
 |---|---|
 | Circle Pad up / down | walk |
 | Circle Pad left / right | turn |
-| C-Stick or D-pad left / right | look |
-| D-pad up / down | zoom |
+| **D-pad** up / right / down / left | hotbar slots 1-4 of the set X picked |
 | **B** | jump |
 | **L** | next target |
+| **L + Y** | aim the target ring with the Circle Pad; release Y (or L) takes the aimed enemy |
 | **R** | attack |
-| **Y** | chat |
+| **Y** (hold) | look around with the Circle Pad; D-pad left / right also look, up / down zoom the camera in / out |
+| **Y** (tap) | clear the target (chat: START -> Chat or the touch Chat tab) |
 | **A** | interact |
-| **X** | next hotbar set (on the touch bar) |
+| **X** (tap) | next hotbar set |
+| **X** (hold) | the target's menu (attack, interact, whisper, invite, trade, follow, duel ...) |
 | START | menu |
 
-**Settings → Controls → D-pad → Spells** frees the D-pad for the hotbar: its four cells are the slots of the set shown on
-the touch bar (X changes the set), and the camera looks around with the Circle Pad while **Y** is held (the D-pad looks
-and zooms as before meanwhile). A tap of Y without moving the Circle Pad still opens the chat. The default is **Camera**
-(the layout above), so nothing changes unless the option is turned on.
+The Old 3DS D-pad is always the hotbar. Hold **Y** to look around with the Circle Pad (or with the D-pad: left / right
+look, up / down zoom the camera); a tap of Y without moving **clears the target** (chat is in **START -> Chat** and on the
+touch Chat tab). Tap **X** for the next hotbar set, hold it for the target's menu. Hold **L + Y** and push the Circle Pad
+to aim the target ring (the same ring as the New 3DS C-Stick aim); release Y or L to take the aimed enemy. The top-screen
+bars show the four D-pad slots and the fixed face actions (`X Set`, `A Use`, `B Jump`, `Y Look`).
 
 ### Touch screen
 
@@ -312,6 +315,8 @@ make cia        # produces w3dproto.cia (178 MB memory mode)
 
 `make cia` needs `makerom` and `bannertool` in `PATH` (or set `MAKEROM=` / `BANNERTOOL=`). Add
 `CIA_MEMORY=124MB` for the 124 MB build (`w3dproto-124.cia`) and `CIA_VERSION="0 8 1"` for the version in the title.
+The first `make` also fetches and builds **OpenDSP** (BSD-2-Clause) into `proto3ds/extern/OpenDSP/`; it needs `git` and
+the usual `DEVKITPRO` environment. OpenDSP embeds an open-source DSP firmware, so no `dspfirm.cdc` dump is needed.
 Details (Russian): [`proto3ds/cia/README_RU.md`](proto3ds/cia/README_RU.md).
 
 =======

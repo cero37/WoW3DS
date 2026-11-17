@@ -52,4 +52,4 @@ private:
 
 // Fixed actions of set 0's face buttons for bars and prompts: the New 3DS layout, or the Old 3DS one (X set, A use,
 // B jump, Y chat / look).
-const char* padFixedName(int button, bool old3ds = false, bool yLook = false);   // 4..7
+const char* padFixedName(int button, bool old3ds = false);   // 4..7

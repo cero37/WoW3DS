@@ -1607,9 +1607,10 @@ void GameUi::drawSocial(w3n::GameSession& g, const Input& in) {
 
 // ------------------------------------------------------------------ Settings: controls, graphics, interface
 void GameUi::drawSettings(const Input& in) {
-    const char* names[3] = {tr("Controls", "Управление"), tr("Graphics/sound", "Графика/звук"), tr("Interface", "Интерфейс")};
-    for (int i = 0; i < 3; ++i)
-        btn(2 + i * 106, kTop + 2, 104, 18, names[i], Act::SubView, i, subSettings_ == i ? Style::ToggleOn : Style::Toggle, Font::Small);
+    const char* names[4] = {tr("Controls", "Управление"), tr("Graphics", "Графика"), tr("Interface", "Интерфейс"),
+                            tr("FSR", "FSR")};
+    for (int i = 0; i < 4; ++i)
+        btn(2 + i * 80, kTop + 2, 78, 18, names[i], Act::SubView, i, subSettings_ == i ? Style::ToggleOn : Style::Toggle, Font::Small);
     if (!in.cfg) return;
     const PadConfig& c = *in.cfg;
     int y = kTop + 24;
@@ -1622,15 +1623,16 @@ void GameUi::drawSettings(const Input& in) {
         opt(120, 96, "New 3DS", c.scheme == PadScheme::New3DS, 0);
         opt(220, 96, "Old 3DS", c.scheme == PadScheme::Old3DS, 1);
         y += 21;
-        if (c.scheme == PadScheme::Old3DS) {   // 7.17: the Old 3DS D-pad can be the hotbar instead of the camera
+        if (c.scheme == PadScheme::Old3DS) {   // 7.23: the Old 3DS D-pad is always the hotbar (X changes the set)
             label(tr("D-pad", "Крестовина"));
-            opt(120, 96, tr("Camera", "Камера"), !c.dpadSpells, 41);
-            opt(220, 96, tr("Spells", "Заклинания"), c.dpadSpells, 42);
-            y += 21;
-            list_.textFit(6, y + 2, tr("Spells: hold Y to look, tap Y to chat",
-                                       "Заклинания: Y — смотреть, короткое Y — чат"),
-                          310, kGrey, false, Font::Small);
-            y += 21;
+            list_.textFit(120, y + 1, tr("X: tap set, hold target menu", "X: тап — сет, удержание — меню цели"),
+                          250, kGrey, false, Font::Small);
+            list_.textFit(120, y + 10, tr("Y: hold look (D-pad zoom), tap clear target",
+                                          "Y: удержание — обзор (крестовина — зум), тап — сброс цели"),
+                          250, kGrey, false, Font::Small);
+            list_.textFit(120, y + 19, tr("L + Y: aim the target ring", "L + Y: прицел кольцом цели"),
+                          250, kGrey, false, Font::Small);
+            y += 30;
         } else {
             label(tr("Run from", "Бег от"));
             opt(120, 62, "0.3", fabsf(c.runThreshold - 0.3f) < 0.05f, 10);
@@ -1692,7 +1694,7 @@ void GameUi::drawSettings(const Input& in) {
             btn(258, y, 30, bh, "+", Act::Setting, 141 + i * 10, Style::Normal);
             y += 19;
         }
-    } else {
+    } else if (subSettings_ == 2) {
         y -= 4;   // 8 rows (6.34b: the horizon)
         label(tr("Language", "Язык"));
         opt(120, 150, ui::languageName(c.lang), true, 100);   // 7.15: tap to cycle English / Русский / Español / Deutsch / Français
@@ -1724,9 +1726,39 @@ void GameUi::drawSettings(const Input& in) {
         label(tr("Horizon", "Горизонт"));   // 6.34b: the ground and far buildings past the draw distance (costs GPU time)
         const char* hz[3] = {tr("Off", "Выкл"), "800", "1200"};
         for (int i = 0; i < 3; ++i) opt(120 + i * 65, 62, hz[i], c.horizon == i, 210 + i);
+    } else {
+        y -= 4;
+        label(tr("Internal width", "Внутр. ширина"));   // 7.27: 0 off, 1 sharp at 1:1, 2..4 lower and upscaled
+        const char* fm[5] = {tr("Off", "Выкл"), tr("Sharp", "Резк."), "320", "240", "200"};
+        for (int i = 0; i < 5; ++i) opt(120 + i * 39, 39, fm[i], c.fsr == i, 220 + i);
+        y += 20;
+        label("PICA-CAS");   // 7.28: contrast-adaptive sharpening instead of LITE
+        opt(120, 96, tr("Off", "Выкл"), c.cas == 0, 225);
+        opt(220, 96, tr("On", "Вкл"), c.cas == 1, 226);
+        y += 20;
+        label(tr("CAS strength", "Сила CAS"));
+        const char* cs[5] = {"0", "25", "50", "75", "100"};
+        for (int i = 0; i < 5; ++i) opt(120 + i * 39, 39, cs[i], c.casStrength == i, 227 + i);
+        y += 20;
+        label(tr("CAS gate", "Гейт CAS"));
+        const char* cg[3] = {tr("BAL", "БАЛ"), tr("SOFT", "МЯГК"), tr("SHARP", "РЕЗК")};
+        for (int i = 0; i < 3; ++i) opt(120 + i * 65, 62, cg[i], c.casGate == i, 232 + i);
+        y += 20;
+        label(tr("Output", "Выход"));
+        list_.textFit(120, y + 2, c.topMode == 1 ? "800x240 (wide)" : c.topMode == 2 ? "400x240 (3D)" : "400x240", 190, kText, false);
+        y += 20;
+        label(tr("Wide mode", "Широкий"));
+        list_.textFit(120, y + 2, tr("uses 2x the internal width", "удваивает внутр. ширину"), 190, kGrey, false, Font::Small);
+        y += 20;
+        label(tr("What it is", "Что это"));
+        list_.textFit(120, y + 2, tr("PICA TEV upscale/CAS, not AMD FSR", "PICA TEV апскейл/CAS, не AMD FSR"),
+                      190, kGrey, false, Font::Small);
+        y += 20;
+        list_.textFit(120, y + 2, tr("Changes on the fly, no restart", "Меняется на лету, без перезапуска"),
+                      190, kGrey, false, Font::Small);
     }
-    // 8 rows on Graphics/sound since the particles (stage 5.32), 7 on Interface since the perf log (stage 6): Debug / Quit
-    // stay on the Controls page and in START
+    // 8 rows on Graphics since the particles (stage 5.32), 7 on Interface since the perf log (stage 6), the FSR page
+    // (7.27) has its own tabs: Debug / Quit stay on the Controls page and in START
     if (subSettings_ != 0) return;
     const int by = kTabY - 24;
     btn(2, by, 156, 22, tr("Debug page", "Отладка"), Act::MenuItem, 8, Style::Normal, Font::Small);

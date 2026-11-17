@@ -283,12 +283,17 @@ bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose
         std::printf("  item-targeted spells: %zu (Shiny Bauble among them:%s)\n", itemCasts, known.empty() ? " no" : known.c_str());
     }
     // 5.48: spells that need no unit target: "@self<TAB>id". Every effect's ImplicitTargetA/B (vMaNGOS SpellTarget) is the
-    // caster (1), its party / the friends or hostiles around it (20, 30, 33, 34, 36) - Battle Shout, Thorns-like self buffs,
-    // Thunder Clap. Spells with any single-unit target (6 chain damage, 21 friend ...) or an unknown one are left out.
+    // caster (1), its party / the friends or hostiles around it (20, 30, 33, 34, 36) or an area at the caster's own
+    // position (15: enemies around the source, 22: the source itself) - Battle Shout, Thunder Clap, Frost Nova, Arcane
+    // Explosion. 7.21: 15 and 22 were missing, so Thunder Clap was sent at the selected enemy; the server expects no unit
+    // target for it and refused the cast (it worked only with nothing selected). Spells with any single-unit target (6
+    // chain damage, 21 friend ...) or an unknown one are left out.
     size_t selfCasts = 0;
     if (nameCol >= 107) {
         const uint32_t effC = (uint32_t)nameCol - 59, aC = (uint32_t)nameCol - 38, bC = (uint32_t)nameCol - 35;
-        auto selfKind = [](uint32_t t) { return t == 1 || t == 20 || t == 30 || t == 33 || t == 34 || t == 36; };
+        auto selfKind = [](uint32_t t) {
+            return t == 1 || t == 15 || t == 20 || t == 22 || t == 30 || t == 33 || t == 34 || t == 36;
+        };
         for (uint32_t r = 0; r < spell.records; ++r) {
             const uint32_t id = spell.u32(r, 0);
             if (!id) continue;

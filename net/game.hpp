@@ -46,12 +46,14 @@ struct ChatLine {
     std::string text;
 };
 
-// One melee swing (SMSG_ATTACKERSTATEUPDATE).
+// One blow: a melee swing (SMSG_ATTACKERSTATEUPDATE), spell damage (SMSG_SPELLNONMELEEDAMAGELOG), a damage-over-time
+// tick (SMSG_PERIODICAURALOG) or a damage shield (SMSG_SPELLDAMAGESHIELD). The HUD draws the floating number from it.
 struct MeleeHit {
     uint32_t ms = 0;
     uint64_t attacker = 0, victim = 0;
     int32_t damage = 0;
     uint32_t hitInfo = 0, victimState = 0;
+    uint32_t spell = 0;      // 7.21: the spell that dealt it (0 for a swing)
     bool miss() const { return (hitInfo & 0x10) != 0; }
     bool crit() const { return (hitInfo & 0x80) != 0; }
 };
@@ -555,9 +557,18 @@ public:
 
     // The server moved us (teleport ACK or new world): take the new position once.
     bool takeTeleport(float pos[3], float* orient);
+    // 7.24: SMSG_NEW_WORLD after a transport transfer (a zeppelin crossing a continent) carries the position ON the
+    // transport, not in the world. True once when that happens; the world position is known only after the transport
+    // object has arrived (main.cpp applies the offset). A normal new world goes through takeTeleport() instead.
+    struct TransportSpawn { uint32_t entry = 0; float lx = 0, ly = 0, lz = 0, lo = 0; };
+    bool takeTransportSpawn(TransportSpawn* out);
     // SMSG_TRANSFER_PENDING: the server is about to move us to another map (portal, dungeon door, ship to another
-    // continent). True once per notice; the new position follows with SMSG_NEW_WORLD (takeTeleport).
+    // continent). True once per notice; the new position follows with SMSG_NEW_WORLD (takeTeleport, or
+    // takeTransportSpawn when the transfer is on a transport).
     bool takeTransferPending(uint32_t* map);
+    // Re-assert CMSG_SET_ACTIVE_MOVER (the server ignores movement while no mover is confirmed; a far
+    // teleport or a transport transfer may leave its side without one).
+    void confirmMover(uint32_t nowMs) { sendActiveMover(nowMs); }
     // 7.13: the server moves us itself (a taxi flight, Charge): our own object carries a running SMSG_MONSTER_MOVE spline.
     // True while it runs; pos/yaw are the point on it, taxi says whether the mount camera is wanted. We send no movement
     // packets meanwhile; main.cpp follows the spline with the camera.
@@ -1210,6 +1221,9 @@ private:
     bool teleported_ = false;
     bool transferPending_ = false;
     uint32_t transferMap_ = 0;
+    uint32_t transferTransportEntry_ = 0;   // 7.24: the pending transfer is on a transport (a zeppelin to another continent)
+    bool transportSpawnPending_ = false;
+    TransportSpawn transportSpawn_;
     std::unordered_set<uint64_t> askedNames_;
     std::unordered_set<uint32_t> askedCreatures_, askedGos_;
 };

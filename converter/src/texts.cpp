@@ -6,6 +6,7 @@
 //   taxi.txt     "N id map x y z name" per TaxiNodes.dbc row (ID, map, X, Y, Z, Name[8] 5-12) and
 //                "P from to cost" per TaxiPath.dbc row (ID, from, to, cost)
 #include "conv.h"
+#include "../../common/w3d_transport_periods.h"
 
 #include <algorithm>
 #include <cctype>
@@ -236,9 +237,24 @@ bool exportTransports(const DataDir& data, const std::string& path, bool verbose
         return false;
     }
     if (!haveNodes) std::fprintf(stderr, "transports: TaxiPathNode.dbc not found (no ships; elevators only)\n");
-    std::string out = "# wow3ds transports: T path node map x y z flags delay | A entry timeMs x y z | M display deckZ x0 y0 x1 y1 | S display deckZ x0 y0 x1 y1\n";
+    std::string out = "# wow3ds transports: T path node map x y z flags delay | P entry serverPeriodMs | A entry timeMs x y z | M display deckZ x0 y0 x1 y1 | S display deckZ x0 y0 x1 y1\n";
     size_t nt = 0, nm = 0;
     char b[160];
+    std::map<uint32_t, uint32_t> periods;
+    for (const auto& p : kW3dClassicTransportPeriods) periods[p.entry] = p.periodMs;
+    // Keep explicit server-specific overrides when regenerating the file.
+    if (FILE* old = std::fopen(path.c_str(), "rb")) {
+        while (std::fgets(b, sizeof b, old)) {
+            unsigned entry = 0, period = 0;
+            if (b[0] == 'P' && b[1] == '\t' && std::sscanf(b + 2, "%u %u", &entry, &period) == 2 && entry && period)
+                periods[entry] = period;
+        }
+        std::fclose(old);
+    }
+    for (const auto& [entry, period] : periods) {
+        std::snprintf(b, sizeof b, "P\t%u\t%u\n", entry, period);
+        out += b;
+    }
     for (uint32_t r = 0; haveNodes && r < nodes.records; ++r) {
         if (!nodes.u32(r, 1)) continue;
         std::snprintf(b, sizeof b, "T\t%u\t%u\t%u\t%.2f\t%.2f\t%.2f\t%u\t%u\n", nodes.u32(r, 1), nodes.u32(r, 2), nodes.u32(r, 3),

@@ -41,6 +41,11 @@ void GameSession::attach(WorldClient& wc, uint32_t nowMs) {
     for (const auto& c : wc.characters())
         if (c.guid == self_) selfName = c.name;
     map_ = wc.mapId();
+    teleported_ = false;
+    transferPending_ = false;
+    transferMap_ = 0;
+    transferTransportEntry_ = 0;   // 7.24
+    transportSpawnPending_ = false;
     now_ = nowMs;
     objects.clear();
     objects.setSelf(self_);
@@ -255,6 +260,13 @@ bool GameSession::takeTeleport(float pos[3], float* orient) {
     return true;
 }
 
+bool GameSession::takeTransportSpawn(TransportSpawn* out) {
+    if (!transportSpawnPending_) return false;
+    transportSpawnPending_ = false;
+    if (out) *out = transportSpawn_;
+    return true;
+}
+
 void GameSession::ackForced(uint16_t ackOp, uint64_t guid, uint32_t counter, uint32_t nowMs, const float* speed) {
     Writer w;
     w.u64(guid);
@@ -311,7 +323,13 @@ bool GameSession::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
             uint64_t g = r.packedGuid();
             uint32_t counter = r.u32();
             MovementInfo m;
-            if (!readMovementInfo(r, m)) return true;
+            const size_t movementStart = r.pos;
+            if (objects.turtle) {
+                if (!readMovementInfo(r, m, true) || r.left() != 0) {
+                    r.pos = movementStart; r.bad = false; m = MovementInfo{};
+                    if (!readMovementInfo(r, m)) return true;
+                }
+            } else if (!readMovementInfo(r, m)) return true;
             if (g != self_) {
                 if (WorldObject* o = objects.find(g)) { o->mv = m; o->posMs = nowMs; o->pathActive = false; }
                 return true;
@@ -326,6 +344,8 @@ bool GameSession::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
             // anything still queued was measured from the old spot.
             mover.queue().clear();
             teleported_ = true;
+            transferTransportEntry_ = 0;   // 7.24: a plain teleport is no transport transfer
+            transportSpawnPending_ = false;
             triggerWatch.rearm();   // we stand where the server put us: no trigger fires until we walk into one
             ++stats.teleports;
             return true;
@@ -334,13 +354,35 @@ bool GameSession::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
             map_ = r.u32();
             float x = r.f32(), y = r.f32(), z = r.f32(), o = r.f32();
             if (r.bad) return true;
+            const bool byTransport = transferTransportEntry_ != 0;
+            // The server has confirmed a passenger transfer. Keep that already-known ship even if the destination
+            // map does not immediately re-announce it; discard the rest of the old world's objects as usual.
+            ObjectTable::TransportMemory carriedShip;
+            if (byTransport) {
+                for (const auto& m : objects.transportMemory(nowMs)) {
+                    if (m.entry == transferTransportEntry_ && m.guid == mover.info().transportGuid) { carriedShip = m; break; }
+                }
+            }
             objects.clear();
             objects.setSelf(self_);
+            if (carriedShip.guid) objects.restoreTransport(carriedShip, nowMs);
             triggerWatch.rearm();
-            mover.reset(x, y, z, o, nowMs);
+            mover.queue().clear();   // anything still queued was measured in the old world / on the old transport
+            if (byTransport) {
+                // 7.24: on a transport the server sends the offset on it, not a world position (vMaNGOS
+                // Player::SendNewWorld: m_movementInfo.GetTransportPos()). main.cpp waits for the transport object in the
+                // new map, puts the offset on it and only then has a world position to load the ground around.
+                transportSpawn_ = TransportSpawn{transferTransportEntry_, x, y, z, o};
+                transportSpawnPending_ = true;
+                teleported_ = false;
+            } else {
+                mover.reset(x, y, z, o, nowMs);
+                transportSpawnPending_ = false;
+                teleported_ = true;
+            }
+            transferTransportEntry_ = 0;
             send(MoveOp::WorldportAck, {}, nowMs);
             sendActiveMover(nowMs);
-            teleported_ = true;
             ++stats.newWorlds;
             return true;
         }
@@ -364,11 +406,17 @@ bool GameSession::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
             ++clock.updates;
             return true;
         }
-        case SMSG_TRANSFER_PENDING: {   // u32 map [, u32 transport entry, u32 transport map]: a new map is being loaded
+        case SMSG_TRANSFER_PENDING: {   // u32 map [, u32 transport entry, u32 old map id]: a new map is being loaded
             uint32_t m = r.u32();
             if (r.bad) return true;
             transferMap_ = m;
             transferPending_ = true;
+            transportSpawnPending_ = false;
+            transferTransportEntry_ = 0;
+            if (r.left() >= 4) {
+                transferTransportEntry_ = r.u32();   // 7.24: a ship / zeppelin carries us to the other continent
+                if (r.left() >= 4) r.u32();          // the old map id (the new world's local position is enough)
+            }
             return true;
         }
         case SMSG_FORCE_RUN_SPEED_CHANGE:

@@ -4,6 +4,7 @@ PLAN.md
 # build outputs (7.09)
 converter/build/
 proto3ds/build/
+proto3ds/extern/OpenDSP/
 *.elf
 *.3dsx
 *.cia

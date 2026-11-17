@@ -607,7 +607,7 @@ void hudBuildGame(HudList& l, const HudInput& in) {
                 }
             }
             if (in.pad && in.pad->soft && o.guid == in.pad->soft && !o.self)   // interact prompt
-                l.textCentered((int)pl.sx, y - 12 - markUp, std::string("[Y] ") + ui::trText(in.pad->softVerb), kGold);
+                l.textCentered((int)pl.sx, y - 12 - markUp, std::string("[") + in.interactKey + "] " + ui::trText(in.pad->softVerb), kGold);
         }
         // 6.67/6.68: chat bubbles over the speakers (Say, Yell, Party, the creatures' say / yell, /e), drawn as the original does:
         // a dark translucent rounded box with a thin light edge and a small tail, white text (yell red, party blue, emote
@@ -702,7 +702,7 @@ void hudBuildGame(HudList& l, const HudInput& in) {
                 float p[3] = {so->mv.x, so->mv.y, so->mv.z + 1.4f}, sx, sy;
                 if (hudProject(in, p, &sx, &sy)) {
                     l.textCentered((int)sx, (int)sy - 12, ascii(so->name.empty() ? std::string("Object") : so->name), kGold);
-                    l.textCentered((int)sx, (int)sy - 23, std::string("[Y] ") + ui::trText(in.pad->softVerb), kGold);
+                    l.textCentered((int)sx, (int)sy - 23, std::string("[") + in.interactKey + "] " + ui::trText(in.pad->softVerb), kGold);
                 }
             }
         }
@@ -912,8 +912,11 @@ void hudBuildGame(HudList& l, const HudInput& in) {
     if (in.pad && in.pad->show) {
         const HudPadView& pv = *in.pad;
         if (pv.mode) {   // targeting mode: what the face buttons do now instead of the bars
-            const char* t1 = pv.mode == 1 ? "ENEMY: C-Stick aims, release R" : "FRIEND: C-Stick aims, release L";
-            const char* t2 = pv.mode == 1 ? "B last  A assist  Y attack  X next" : "B yourself  A assist  X next";
+            // 7.26: the Old 3DS has no C-Stick; L + Y aims with the Circle Pad and releasing Y (or L) takes the unit.
+            const char* t1 = pv.mode == 1 ? (in.old3ds ? "ENEMY: Circle Pad aims" : "ENEMY: C-Stick aims, release R")
+                                          : "FRIEND: C-Stick aims, release L";
+            const char* t2 = pv.mode == 1 ? (in.old3ds ? "release Y: take target" : "B last  A assist  Y attack  X next")
+                                          : "B yourself  A assist  X next";
             panel(l, 91, 172, 218, 30);
             ui::Image ti = ui::assets().sprite(pv.mode == 1 ? "cp_target_enemy" : "cp_target_friend");   // UI stage 11
             const int tx0 = ti.ok() ? 121 : 95;
@@ -921,6 +924,7 @@ void hudBuildGame(HudList& l, const HudInput& in) {
             l.text(tx0, 175, t1, pv.mode == 1 ? hudRgba(255, 90, 90) : hudRgba(110, 255, 110));
             l.text(tx0, 187, t2, kWhite);
         } else {
+            const bool old = in.old3ds;   // 7.21: the Old 3DS has no ZL/ZR and no C-Stick; its D-pad may be the camera
             // UI stage 2: crossbars in the bottom corners (the centre stays on the world) - D-pad diamond bottom left,
             // face buttons bottom right, icons 22 px,
             // the button's glyph in the corner, cooldowns as a dark sweep from the top and seconds
@@ -932,6 +936,7 @@ void hudBuildGame(HudList& l, const HudInput& in) {
             const ui::Image ring = ui::assets().sprite("cp_ring"), ringHl = ui::assets().sprite("cp_ring_hl");
             static const char* kGlyphPic[8] = {"cp_dpad_up", "cp_dpad_right", "cp_dpad_down", "cp_dpad_left", "cp_btn_x", "cp_btn_a",
                                                "cp_btn_b", "cp_btn_y"};
+            // On the Old 3DS the D-pad is always the hotbar (X changes the set).
             for (int b = 0; b < 8; ++b) {
                 int cx = b < 4 ? 37 : kHudW - 37, cy = 199;   // (UI stage 8: up 7 px - the experience bar is under them)
                 int x = cx + kDx[b % 4] - cs / 2, y = cy + kDy[b % 4] - cs / 2;
@@ -942,7 +947,7 @@ void hudBuildGame(HudList& l, const HudInput& in) {
                     if (c.icon.ok()) disc(l, ccx, ccy, r - 0.5f, 0xFFFFFFFFu, &c.icon);
                     else if (!c.name.empty()) {
                         std::string nm = c.fixed ? ascii(c.name) : auraInitials(c.name);
-                        l.textCentered(x + cs / 2, y + 6, HudList::fit(nm, cs), c.fixed ? kGrey : kWhite, false);
+                        l.textCentered(x + cs / 2, y + 6, HudList::fit(nm, cs + 6), c.fixed ? kGrey : kWhite, false);
                     }
                     cellCooldown(l, x, y, cs, c, true, now);   // UI stage 12: the clock sweep, the time, the flash
                     if (c.count) l.textRight(x + cs, y + cs - 10, std::to_string(c.count), kWhite);
@@ -959,22 +964,31 @@ void hudBuildGame(HudList& l, const HudInput& in) {
                 if (c.icon.ok()) l.image(x, y, cs, cs, c.icon);
                 else if (!c.name.empty()) {
                     std::string nm = c.fixed ? ascii(c.name) : auraInitials(c.name);
-                    l.textCentered(x + cs / 2, y + 6, HudList::fit(nm, cs), c.fixed ? kGrey : kWhite, false);
+                    l.textCentered(x + cs / 2, y + 6, HudList::fit(nm, cs + 6), c.fixed ? kGrey : kWhite, false);
                 }
                 cellCooldown(l, x, y, cs, c, false, now);   // UI stage 12: the clock sweep, the time, the flash
                 if (c.count) l.textRight(x + cs, y + cs - 10, std::to_string(c.count), kWhite);
                 l.outline(x - 1, y - 1, cs + 2, cs + 2, c.active ? hudRgba(255, 210, 40) : pv.binding ? hudRgba(90, 230, 255) : kBorder);
                 l.text(x + 1, y - 2, kGlyph[b], kGold);
             }
-            for (int k = 0; k < 2; ++k) {   // ZL / ZR lit when their set (or both) is on
-                bool on = (pv.set & (1 << k)) != 0;
-                int x = k ? kHudW - 28 : 4, y = 155;   // above its cluster: ZL over the D-pad, ZR over the face buttons
-                l.rect(x, y, 24, 11, on ? hudRgba(120, 90, 20, 220) : hudRgba(0, 0, 0, 120));
-                l.textCentered(x + 12, y, k ? "ZR" : "ZL", on ? kGold : kGrey, false);
+            if (old) {
+                // 7.21: X cycles the four sets; there are no ZL/ZR modifiers. The D-pad is the hotbar (4 slots of the set).
+                char t[24];
+                snprintf(t, sizeof t, "X %s %d", ui::tr("set", "набор"), pv.set + 1);
+                l.rect(kHudW - 70, 155, 66, 11, hudRgba(0, 0, 0, 120));
+                l.textCentered(kHudW - 37, 155, t, kGold, false);
+                l.text(4, 155, ui::tr("L: target  R: attack", "L: цель  R: атака"), kGrey, false);
+            } else {
+                for (int k = 0; k < 2; ++k) {   // ZL / ZR lit when their set (or both) is on
+                    bool on = (pv.set & (1 << k)) != 0;
+                    int x = k ? kHudW - 28 : 4, y = 155;   // above its cluster: ZL over the D-pad, ZR over the face buttons
+                    l.rect(x, y, 24, 11, on ? hudRgba(120, 90, 20, 220) : hudRgba(0, 0, 0, 120));
+                    l.textCentered(x + 12, y, k ? "ZR" : "ZL", on ? kGold : kGrey, false);
+                }
+                char t[16];
+                snprintf(t, sizeof t, "p%d", pv.page + 1);
+                l.text(32, 155, t, kGrey);
             }
-            char t[16];
-            snprintf(t, sizeof t, "p%d", pv.page + 1);
-            l.text(32, 155, t, kGrey);
         }
     }
     // ---- UI stage 8: the experience bar along the bottom edge, like the original's above its action bar: purple, blue
@@ -1068,7 +1082,9 @@ void hudBuildGame(HudList& l, const HudInput& in) {
     if (in.placeHint) {   // two short lines between the crossbar clusters
         l.fade = 255;
         const std::string t1 = HudList::fit(in.placeHint, 230);
-        const std::string t2 = ui::tr("C-Stick aim | again: cast | cancel", "C-Stick: прицел | ещё раз: каст | отмена");
+        const std::string t2 = in.old3ds
+            ? ui::tr("Circle Pad: aim | A: cast", "Круг: прицел | A: каст")
+            : ui::tr("C-Stick aim | again: cast | cancel", "C-Stick: прицел | ещё раз: каст | отмена");
         const int w = std::max(HudList::width(t1), HudList::width(t2)), lh = HudList::lineHeight(), y = 168;
         l.rect(kHudW / 2 - w / 2 - 4, y - 1, w + 8, 2 * lh + 2, hudRgba(0, 0, 0, 150));
         l.textCentered(kHudW / 2, y, t1, hudRgba(255, 210, 90));

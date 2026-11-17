@@ -1049,6 +1049,13 @@ bool GameSession::handleSocial(uint16_t op, const Bytes& data, uint32_t nowMs) {
             r.pos += (size_t)n * 20;   // per school: u32 school, f32 damage, u32 damage, u32 absorb, u32 resist
             h.victimState = r.u32();
             if (r.bad) return true;
+            // 7.21: the 1.12 body continues with attackerState and meleeSpellId (the next-melee ability the swing
+            // belongs to: Heroic Strike, Cleave ...). The same blow also arrives as SMSG_SPELLNONMELEEDAMAGELOG;
+            // the id lets the floating numbers tell the two packets apart instead of drawing the blow twice.
+            if (r.left() >= 8) {
+                r.u32();            // attackerState
+                h.spell = r.u32();  // meleeSpellId (0 = a plain swing)
+            }
             if (WorldObject* o = objects.find(h.attacker)) {
                 o->swingMs = nowMs ? nowMs : 1;
                 o->meleeVictim = h.victim;

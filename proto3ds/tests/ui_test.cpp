@@ -378,8 +378,7 @@ int main(int argc, char** argv) {
         r.draw("settings");
         bool setOk = r.ui.tab() == GameUi::Tab::Settings && r.ui.panel(r.s) == GameUi::Panel::Tabs && r.tap(GameUi::Act::Setting, 1) &&
                      r.cfg.scheme == PadScheme::Old3DS;
-        // 7.17: the Old 3DS D-pad setting appears on the page only in that scheme
-        setOk = setOk && r.tap(GameUi::Act::Setting, 42) && r.cfg.dpadSpells && r.tap(GameUi::Act::Setting, 41) && !r.cfg.dpadSpells;
+        // 7.23: the Old 3DS D-pad is always the hotbar (the Camera/Spells option is gone)
         r.cfg.scheme = PadScheme::New3DS;
         // Graphics/sound page: the music volume + and - (pad.txt "music")
         r.tap(GameUi::Act::SubView, 1);

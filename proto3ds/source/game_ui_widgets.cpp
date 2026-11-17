@@ -289,20 +289,22 @@ void GameUi::crossbarPicker(w3n::GameSession& g, const Input& in) {
     list_.textFit(10, kTop + 6, title, 220, kGold, true, Font::Normal);
     if (!drag_.active) btn(kTouchW - 74, kTop + 4, 66, 20, tr("Cancel", "Отмена"), Act::ClosePanel, 0, Style::Normal, Font::Small);
     static const char* kSet[4] = {"", "ZL", "ZR", "ZL+R"};
+    const bool old = in.cfg && in.cfg->scheme == PadScheme::Old3DS;   // 7.21: X cycles the sets, the face buttons are fixed
     static const char* kGlyph[8] = {"↑", "→", "↓", "←", "X", "A", "B", "Y"};
     const int cell = 32, gap = 3, x0 = 40, y0 = kTop + 30;
     for (int set = 0; set < 4; ++set) {
         const int y = y0 + set * (cell + gap);
-        list_.textRight(x0 - 4, y + 10, set ? kSet[set] : "—", set == shownSet_ ? kGold : kGrey);
+        char setLabel[8];
+        if (old) snprintf(setLabel, sizeof setLabel, "X%d", set + 1);
+        list_.textRight(x0 - 4, y + 10, old ? setLabel : set ? kSet[set] : "—", set == shownSet_ ? kGold : kGrey);
         for (int b = 0; b < 8; ++b) {
             const int slot = set * 8 + b, x = x0 + b * (cell + gap);
             if (b == 4) list_.rect(x - 2, y, 1, cell, kFrameDim);   // D-pad | face buttons
-            if (!padSlotBindable(slot)) {
+            if (!padSlotBindable(slot) || (old && b >= 4)) {   // Old 3DS: X / A / B / Y keep their fixed actions in every set
                 list_.rect(x, y, cell, cell, kRowAlt);
                 list_.textCentered(x + cell / 2, y + 2, kGlyph[b], kGrey);
-                list_.textCentered(x + cell / 2, y + 16, HudList::fit(padFixedName(b, in.cfg && in.cfg->scheme == PadScheme::Old3DS,
-                                                                                       in.cfg && in.cfg->dpadSpells), cell - 2),
-                                   hudRgba(110, 106, 98));
+                const char* nm = padFixedName(b, old);
+                list_.textCentered(x + cell / 2, y + 16, HudList::fit(nm, cell - 2), hudRgba(110, 106, 98));
                 continue;
             }
             const ActionSlot a = bars ? bars->at(slot) : ActionSlot();
@@ -316,7 +318,9 @@ void GameUi::crossbarPicker(w3n::GameSession& g, const Input& in) {
         }
     }
     list_.textCentered(kTouchW / 2, y0 + 4 * (cell + gap) + 1,
-                       drag_.active ? tr("Drop it on a button", "Отпустите на кнопке") : tr("Tap a cell or press the button", "Нажмите ячейку или кнопку"),
+                       drag_.active ? tr("Drop it on a button", "Отпустите на кнопке")
+                       : old ? tr("Tap a D-pad cell (X changes the set)", "Нажмите ячейку крестовины (X меняет набор)")
+                             : tr("Tap a cell or press the button", "Нажмите ячейку или кнопку"),
                        kGrey);
 }
 

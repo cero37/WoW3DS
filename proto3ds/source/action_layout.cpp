@@ -4,13 +4,13 @@
 
 #include <algorithm>
 
-const char* padFixedName(int button, bool old3ds, bool yLook) {
+const char* padFixedName(int button, bool old3ds) {
     if (old3ds) {
         switch (button) {
             case 4: return "Set";        // X (top): the next hotbar set
             case 5: return "Use";        // A (right): interact
             case 6: return "Jump";       // B (bottom)
-            case 7: return yLook ? "Look" : "Chat";   // Y (left): hold to look with the Circle Pad, a tap is chat
+            case 7: return "Look";       // Y (left): hold to look with the Circle Pad, a tap is chat
             default: return "";
         }
     }

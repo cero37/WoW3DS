@@ -42,6 +42,7 @@ enum : uint16_t {
     SMSG_SPELL_START = 0x131, SMSG_SPELL_GO = 0x132, SMSG_SPELL_FAILURE = 0x133, SMSG_SPELL_COOLDOWN = 0x134,
     SMSG_COOLDOWN_EVENT = 0x135, SMSG_SPELLHEALLOG = 0x150, SMSG_CLEAR_COOLDOWN = 0x1DE, SMSG_ITEM_COOLDOWN = 0x0B0,
     SMSG_REMOVED_SPELL = 0x203, SMSG_SPELLNONMELEEDAMAGELOG = 0x250, SMSG_PERIODICAURALOG = 0x24E,
+    SMSG_SPELLDAMAGESHIELD = 0x24F,
     CMSG_CANCEL_AURA = 0x136, SMSG_UPDATE_AURA_DURATION = 0x137,
 };
 constexpr uint16_t TARGET_FLAG_UNIT = 0x0002;
@@ -50,6 +51,23 @@ constexpr uint16_t TARGET_FLAG_UNIT = 0x0002;
 uint64_t guidBySize(Reader& r, size_t tail) {
     if (r.left() == 8 + tail) return r.u64();
     return r.packedGuid();
+}
+
+// 7.21: the floating combat text of the HUD reads GameSession::hits, which used to hold melee swings only. Spell damage,
+// damage-over-time ticks and damage shields go into the same list now, so Fireball, Thunder Clap, a wand or a DoT shows
+// its number like a sword blow does.
+void addHit(std::deque<MeleeHit>& hits, uint32_t nowMs, uint64_t attacker, uint64_t victim, int32_t damage,
+            uint32_t hitInfo, uint32_t spell) {
+    if (damage <= 0) return;
+    MeleeHit h;
+    h.ms = nowMs;
+    h.attacker = attacker;
+    h.victim = victim;
+    h.damage = damage;
+    h.hitInfo = hitInfo;
+    h.spell = spell;
+    hits.push_back(h);
+    while (hits.size() > 32) hits.pop_front();
 }
 }  // namespace
 
@@ -633,6 +651,7 @@ bool GameSession::handleSpells(uint16_t op, const Bytes& data, uint32_t nowMs) {
             }
             if (caster != self_) { unitCasts_.erase(caster); return true; }
             if (cast.spell == spell) cast = CastState();
+            if (lastCastSpell_ == spell) lastCastRetry_ = 0;   // 7.21: the cast worked: a later refusal may retry again
             ++spellCount;
             {   // UI stage 12: our cooldown starts now (the 1.12 server leaves it to the client)
                 uint32_t itemEntry = 0;
@@ -667,6 +686,20 @@ bool GameSession::handleSpells(uint16_t op, const Bytes& data, uint32_t nowMs) {
                     send(CMSG_CAST_SPELL, w.b, nowMs);
                     return true;
                 }
+            }
+            // 7.21: a harmful spell refused "invalid target" while an enemy was selected may be an area centred on the
+            // caster (Thunder Clap, Frost Nova, Arcane Explosion). An old spells.txt without its "@self" line made the
+            // client send the enemy as a unit target, which the server does not expect: retry once with no target. Only
+            // for spells without "@range" data (instant / melee reach); a ranged spell refused this way is a real wrong
+            // target and a second refusal would only add a second error line.
+            if (res == 10 && !spellNames.friendly(spell) && !spellNames.range(spell) && spell == lastCastSpell_ && lastCastTarget_ &&
+                lastCastTarget_ != self_ && lastCastRetry_ != spell) {
+                lastCastRetry_ = spell;
+                Writer w;
+                w.u32(spell);
+                w.u16(0);
+                send(CMSG_CAST_SPELL, w.b, nowMs);
+                return true;
             }
             lastCastRetry_ = 0;
             lastCastFail = res;
@@ -759,16 +792,39 @@ bool GameSession::handleSpells(uint16_t op, const Bytes& data, uint32_t nowMs) {
         case SMSG_SPELLNONMELEEDAMAGELOG: {
             uint64_t victim = r.packedGuid(), caster = r.packedGuid();
             uint32_t spell = r.u32(), dmg = r.u32();
-            if (!r.bad) {   // 6.95: the sound of the blow, for everyone near (the school byte follows the damage)
+            if (r.bad) return true;
+            const uint8_t school = r.left() >= 1 ? r.u8() : 0;
+            // The 1.12 body after the school byte: absorbed, resisted, a periodic flag, an unused byte, blocked, hit type
+            // flags (bit 0x2 is a critical hit). Older/short bodies are tolerated: the number is drawn anyway.
+            uint8_t periodic = 0;
+            uint32_t hitType = 0;
+            if (r.left() >= 4 + 4 + 1 + 1 + 4 + 4) {
+                r.skip(8);         // absorbed, resisted
+                periodic = r.u8();
+                r.skip(1);         // unused
+                r.skip(4);         // blocked
+                hitType = r.u32();
+            }
+            {   // 6.95: the sound of the blow, for everyone near
                 WorldSound w;
                 w.kind = WorldSound::SpellDamage;
                 w.src = caster;
                 w.dst = victim;
                 w.spell = spell;
-                w.victimState = r.left() >= 1 ? r.u8() : 0;
+                w.victimState = school;
+                w.hitInfo = periodic ? 1u : 0u;
                 worldSound(w);
             }
-            if (r.bad || (caster != self_ && victim != self_)) return true;
+            // 7.21: the floating number (Fireball, Thunder Clap, a wand shot ...), as a melee swing gets. A next-melee
+            // ability (Heroic Strike, Cleave) sends the same blow twice - SMSG_ATTACKERSTATEUPDATE with its id and this
+            // log - so a hit of that id just seen is not added a second time.
+            bool alreadyCounted = false;
+            if (spell && dmg > 0)
+                for (auto it = hits.rbegin(); it != hits.rend() && nowMs >= it->ms && nowMs - it->ms <= 1000 && !alreadyCounted; ++it)
+                    alreadyCounted = it->spell == spell && it->attacker == caster && it->victim == victim && it->damage == (int32_t)dmg;
+            if (!alreadyCounted && (caster == self_ || victim == self_))
+                addHit(hits, nowMs, caster, victim, (int32_t)dmg, (hitType & 0x2) ? 0x80u : 0u, spell);
+            if (caster != self_ && victim != self_) return true;
             std::string c = caster == self_ ? "Your" : objects.nameOf(caster) + "'s";
             std::string v = victim == self_ ? "you" : objects.nameOf(victim);
             if (c == "'s") c = "?'s";
@@ -776,22 +832,30 @@ bool GameSession::handleSpells(uint16_t op, const Bytes& data, uint32_t nowMs) {
             addLocal(c + " " + spellNames.name(spell) + " hits " + v + " for " + std::to_string(dmg) + ".", nowMs);
             return true;
         }
-        case SMSG_PERIODICAURALOG: {   // 6.95: damage-over-time ticks: only their sound (packed victim, packed caster, spell, count, then per tick: aura type 3 = damage, school, ...)
+        case SMSG_PERIODICAURALOG: {   // 6.95: damage-over-time ticks: their sound and 7.21 their floating numbers (packed victim, packed caster, spell, count, then per tick: aura type 3 = damage, amount, school, absorb, resist)
             const uint64_t victim = r.packedGuid(), caster = r.packedGuid();
             const uint32_t spell = r.u32(), count = r.u32();
             if (r.bad || count == 0 || count > 8) return true;
             const uint32_t type = r.u32();
             if (r.bad || (type != 3 && type != 89)) return true;   // PERIODIC_DAMAGE (89 = percent damage); heals stay silent
             const uint32_t dmg = r.u32();
-            (void)dmg;
             WorldSound w;
             w.kind = WorldSound::SpellDamage;
             w.src = caster;
             w.dst = victim;
             w.spell = spell;
-            w.victimState = r.left() >= 4 ? r.u32() : 0;
+            w.victimState = r.left() >= 4 ? r.u32() : 0;   // school, for the sound
             w.hitInfo = 1;
             worldSound(w);
+            if (caster == self_ || victim == self_) addHit(hits, nowMs, caster, victim, (int32_t)dmg, 0, spell);
+            return true;
+        }
+        case SMSG_SPELLDAMAGESHIELD: {   // 7.21: Thorns / Retribution Aura: u64 the shield's owner (the attacker), u64 the unit that struck it (the victim), u32 damage, u32 school (no spell id in 1.12)
+            const uint64_t owner = r.u64(), striker = r.u64();
+            const uint32_t dmg = r.u32();
+            (void)r.u32();   // school
+            if (r.bad) return true;
+            if (owner == self_ || striker == self_) addHit(hits, nowMs, owner, striker, (int32_t)dmg, 0, 0);
             return true;
         }
         case SMSG_SPELLHEALLOG: {
