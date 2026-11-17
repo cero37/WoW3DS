@@ -16,7 +16,7 @@ stream.
 **Current release: 0.8.1** (13 November 2026). Converter packs made with 0.8.0 stay valid, and an 0.8.0 client reads an
 0.8.1 pack and the other way round. Older notes: [0.8.0](CHANGES_0.8.0.md).
 =======
->>>>>>> 4bfb5b35dc17c18488e5e6842832d68b3b776dba
+
 
 No game data, textures, models or sounds are in this repository. You need your own legally obtained WoW 1.12.1/1.18 client
 (`Data/*.MPQ`) and a private server that speaks the 1.12/turtle WoW protocol (the client was developed against a vMaNGOS-compatible
@@ -34,10 +34,7 @@ server).
 - [Windows GUI converter](#windows-gui-converter)
 - [Command-line converter](#command-line-converter)
 - [Quest areas data](#quest-areas-data)
-<<<<<<< HEAD
 - [Tests](#tests)
-=======
->>>>>>> 4bfb5b35dc17c18488e5e6842832d68b3b776dba
 - [Legal](#legal)
 
 ## What works
