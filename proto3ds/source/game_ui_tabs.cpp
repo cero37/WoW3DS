@@ -1732,18 +1732,6 @@ void GameUi::drawSettings(const Input& in) {
         const char* fm[5] = {tr("Off", "Выкл"), tr("Sharp", "Резк."), "320", "240", "200"};
         for (int i = 0; i < 5; ++i) opt(120 + i * 39, 39, fm[i], c.fsr == i, 220 + i);
         y += 20;
-        label("PICA-CAS");   // 7.28: contrast-adaptive sharpening instead of LITE
-        opt(120, 96, tr("Off", "Выкл"), c.cas == 0, 225);
-        opt(220, 96, tr("On", "Вкл"), c.cas == 1, 226);
-        y += 20;
-        label(tr("CAS strength", "Сила CAS"));
-        const char* cs[5] = {"0", "25", "50", "75", "100"};
-        for (int i = 0; i < 5; ++i) opt(120 + i * 39, 39, cs[i], c.casStrength == i, 227 + i);
-        y += 20;
-        label(tr("CAS gate", "Гейт CAS"));
-        const char* cg[3] = {tr("BAL", "БАЛ"), tr("SOFT", "МЯГК"), tr("SHARP", "РЕЗК")};
-        for (int i = 0; i < 3; ++i) opt(120 + i * 65, 62, cg[i], c.casGate == i, 232 + i);
-        y += 20;
         label(tr("Output", "Выход"));
         list_.textFit(120, y + 2, c.topMode == 1 ? "800x240 (wide)" : c.topMode == 2 ? "400x240 (3D)" : "400x240", 190, kText, false);
         y += 20;
@@ -1751,7 +1739,10 @@ void GameUi::drawSettings(const Input& in) {
         list_.textFit(120, y + 2, tr("uses 2x the internal width", "удваивает внутр. ширину"), 190, kGrey, false, Font::Small);
         y += 20;
         label(tr("What it is", "Что это"));
-        list_.textFit(120, y + 2, tr("PICA TEV upscale/CAS, not AMD FSR", "PICA TEV апскейл/CAS, не AMD FSR"),
+        list_.textFit(120, y + 2, tr("PICA TEV 3-tap upscale, not AMD FSR", "PICA TEV 3-tap апскейл, не AMD FSR"),
+                      190, kGrey, false, Font::Small);
+        y += 20;
+        list_.textFit(120, y + 2, tr("HUD and UI stay at the output size", "HUD и UI — в разрешении экрана"),
                       190, kGrey, false, Font::Small);
         y += 20;
         list_.textFit(120, y + 2, tr("Changes on the fly, no restart", "Меняется на лету, без перезапуска"),

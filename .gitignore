@@ -10,3 +10,6 @@ proto3ds/extern/OpenDSP/
 *.cia
 *.smdh
 *.orig
+
+# offline test output (root build/)
+/build/

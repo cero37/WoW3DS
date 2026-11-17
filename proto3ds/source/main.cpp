@@ -1150,19 +1150,13 @@ int main() {
         const int logical = kLogical[mode];
         const int mul = topModeNow == 1 ? 2 : 1;   // wide: twice the horizontal samples, same aspect
         const int w = logical * mul, h = logical * 3 / 5;
-        const bool needTemp = padCfg.cas != 0;   // PICA-CAS needs the intermediate target
-        if (fsrScene::ensure(w, h, needTemp) && (!needTemp || fsrScene::tempReady())) return true;
-        u32 blocks[3];
-        const int nblocks = fsrScene::vramBlocks(w, h, needTemp, blocks);
-        const uint32_t moved = nblocks ? streamerEvictVram(blocks, nblocks) : 0;
-        if (fsrScene::ensure(w, h, needTemp) && (!needTemp || fsrScene::tempReady())) {
+        if (fsrScene::ensure(w, h)) return true;
+        u32 blocks[2];
+        fsrScene::vramBlocks(w, h, blocks);
+        const uint32_t moved = streamerEvictVram(blocks, 2);
+        if (fsrScene::ensure(w, h)) {
             perf::event("FSR %dx%d (%s): %lu KB of textures moved to linear memory", w, h,
                         topModeNow == 1 ? "wide" : "normal", (unsigned long)(moved / 1024));
-            return true;
-        }
-        if (needTemp && fsrScene::ready()) {   // the scene is up; CAS falls back to the LITE pass
-            perf::event("CAS %dx%d: no VRAM for the intermediate target - LITE", w, h);
-            netNote = "CAS: no VRAM, LITE";
             return true;
         }
         perf::event("FSR %dx%d: not enough VRAM after moving %lu KB - direct rendering", w, h, (unsigned long)(moved / 1024));
@@ -3132,8 +3126,6 @@ int main() {
             // 7.27: FSR-lite. The scene goes into fsrScene's smaller texture and is upscaled to the top screen before the HUD,
             // so the UI stays at 400/800x240. The wide mode doubles the internal width (see fsrUpdate), the 3D mode keeps it.
             const bool fsrOn = padCfg.fsr > 0 && fsrScene::ready();
-            const bool casOn = fsrOn && padCfg.cas != 0 && fsrScene::tempReady();   // 7.28: PICA-CAS
-            const int casStrength255 = (std::clamp(padCfg.casStrength, 0, 4) * 255 + 2) / 4;
             const int fsrOutW = topModeNow == 1 ? 800 : 400;
             const u32 clearRgba = loginUi ? 0x05080CFF : rendererClearColor(rs);
             rendererSetOffscreen(fsrOn);   // 7.27: the scene texture is landscape; the screen target is sideways (no tilt)
@@ -3153,9 +3145,7 @@ int main() {
                     if (glueScene) rendererDrawScene(glueCam, glueFov, glueNear, glueFar, glueModels, &glueCreatures, fc);
                     if (fsrOn) {
                         C3D_FrameDrawOn(t);
-                        fsrScene::upscale(t, fsrOutW, kHudH,
-                                          casOn ? fsrScene::Filter::Cas : fsrScene::Filter::Lite,
-                                          casStrength255, padCfg.casGate);
+                        fsrScene::upscale(t, fsrOutW, kHudH, padCfg.fsr == 1);
                     }
                     perf::lap(perf::kWorld);
                     perf::mark("glue: top screen UI");
@@ -3166,9 +3156,7 @@ int main() {
                     if (fsrOn) {
                         perf::mark("FSR upscale");
                         C3D_FrameDrawOn(t);
-                        fsrScene::upscale(t, fsrOutW, kHudH,
-                                          casOn ? fsrScene::Filter::Cas : fsrScene::Filter::Lite,
-                                          casStrength255, padCfg.casGate);
+                        fsrScene::upscale(t, fsrOutW, kHudH, padCfg.fsr == 1);
                     }
                     perf::mark("HUD draw");
                     perf::lap(perf::kWorld);

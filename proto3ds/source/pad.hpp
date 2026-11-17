@@ -46,9 +46,6 @@ struct PadConfig {
     int topMode = 0;                  // top screen: 0 normal 400x240, 1 wide 800x240, 2 stereoscopic 3D (the slider)
     int fsr = 0;                      // 7.27: 0 off, 1 sharp (1:1), 2 320, 3 240, 4 200 logical internal width
                                       // (the scene is drawn lower and upscaled by the PICA TEV; wide doubles it)
-    int cas = 0;                      // 7.28: 1 = PICA-CAS instead of the LITE unsharp pass
-    int casStrength = 2;              // 0..4 -> 0 / 25 / 50 / 75 / 100 %
-    int casGate = 0;                  // 0 balanced, 1 soft, 2 sharp
     bool doodads = true;              // small world objects (trees, rocks, furniture)
     bool showStats = false;          // 5.35e: FPS and ping, small, at the bottom centre of the top screen
     int effects = 2;                  // stage 5.32: particles and lamp glows: 0 off, 1 low, 2 high

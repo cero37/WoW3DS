@@ -24,7 +24,7 @@ OPENDSP_TAG ?= v1.3.1
 
 TARGET		:=	w3dproto
 BUILD		:=	build
-SOURCES		:=	source ../net
+SOURCES		:=	source ../net ../net/offline
 DATA		:=	data
 INCLUDES	:=	include ../common ../net $(OPENDSP_REL)/include
 GRAPHICS	:=

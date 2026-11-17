@@ -25,8 +25,6 @@ typedef enum
 	FSR3DS_KERNEL_AA_EDGE,       /* blur + edge weight in alpha (H pass) */
 	FSR3DS_KERNEL_AA_APPLY,      /* weighted lerp(blur, C, weight) */
 	FSR3DS_KERNEL_AA_EDGE_APPLY, /* single-pass adaptive blur (5 stages) */
-	FSR3DS_KERNEL_CAS_H,         /* PICA-CAS horizontal: gated 2C-B, weight in A */
-	FSR3DS_KERNEL_CAS_V,         /* PICA-CAS vertical: gated correction using A */
 } Fsr3dsKernel;
 
 /* TEV constant colour register order: R in bits 0-7. */
@@ -39,16 +37,8 @@ void fsr3dsTevReset(void);
 void fsr3dsTevModulate(void);
 
 /* Configure a complete kernel. strength255 is used by the AA kernels
- * (0 = keep centre, 255 = full blur) and by CAS_H (0 = no correction,
- * 255 = full CAS strength). */
+ * (0 = keep centre, 255 = full blur). */
 void fsr3dsTevKernel(Fsr3dsKernel kernel, int strength255);
-
-/* PICA-CAS contrast gate curve:
- *   0 = balanced: q = 1 - 2*d^2  (default)
- *   1 = soft:     q = 1 - 4*d^2  (stronger halo suppression)
- *   2 = sharp:    q = 1 - d^2    (more correction, less suppression)
- * Applies to subsequent CAS_H/CAS_V configurations. */
-void fsr3dsCasSetGate(int gate);
 
 /* Append the effects stage (stage 4): previous * vertex colour.
  * Vertex colours carry the vignette and colour grade. */

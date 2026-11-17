@@ -1322,16 +1322,7 @@ void GameUi::doAction(w3n::GameSession& g, const Input& in, Act act, int arg, Ou
                 case 210: case 211: case 212: in.cfg->horizon = arg - 210; out.graphicsChanged = true; break;   // 6.34b
                 case 80: case 81: case 82: case 83: in.cfg->crowd = arg - 80; out.graphicsChanged = true; break;
                 case 95: case 96: case 97: in.cfg->topMode = arg - 95; out.graphicsChanged = true; break;
-                case 220: in.cfg->fsr = 0; in.cfg->cas = 0; out.graphicsChanged = true; break;   // Off: the whole chain off
-                case 221: case 222: case 223: case 224: in.cfg->fsr = arg - 220; out.graphicsChanged = true; break;   // 7.27
-                case 225: in.cfg->cas = 0; out.graphicsChanged = true; break;   // 7.28: PICA-CAS
-                case 226:   // CAS needs a base mode: turn on Sharp (1:1) when the chain was off
-                    in.cfg->cas = 1;
-                    if (in.cfg->fsr == 0) in.cfg->fsr = 1;
-                    out.graphicsChanged = true;
-                    break;
-                case 227: case 228: case 229: case 230: case 231: in.cfg->casStrength = arg - 227; out.graphicsChanged = true; break;
-                case 232: case 233: case 234: in.cfg->casGate = arg - 232; out.graphicsChanged = true; break;
+                case 220: case 221: case 222: case 223: case 224: in.cfg->fsr = arg - 220; out.graphicsChanged = true; break;   // 7.27
                 case 90: in.cfg->doodads = !in.cfg->doodads; out.graphicsChanged = true; break;
                 case 170: case 171: case 172: in.cfg->effects = arg - 170; out.graphicsChanged = true; break;
                 case 100: in.cfg->lang = (in.cfg->lang + 1) % ui::kLangCount; ui::setLanguage(in.cfg->lang); break;

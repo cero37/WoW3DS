@@ -277,7 +277,7 @@ GlueAction GlueUi::update(const GlueModel& m, const GlueInput& in) {
                 if ((in.down & (kA | kStart)) && nChars) { ++rev_; return GlueAction::EnterWorld; }
                 if (in.down & kX) { ++rev_; return GlueAction::CreateNew; }
                 if ((in.down & kY) && nChars) { confirmDelete_ = true; ++rev_; }
-                if (in.down & kSelect) { ++rev_; return GlueAction::ChangeRealm; }
+                if (in.down & kSelect) { ++rev_; return m.offline ? GlueAction::Explore : GlueAction::ChangeRealm; }
                 if (in.down & kB) { ++rev_; return GlueAction::Back; }
                 break;
             case GlueScreen::CharCreate: {
@@ -741,8 +741,8 @@ void GlueUi::bottomChars(HudList& l, const GlueModel& m) {
     addBottom(162, 184, 154, 28, GlueAction::CreateNew, 0, kButton);
     button(l, 4, 216, 100, 22, tr("Delete", "Удалить"), n > 0, false);
     if (n) addBottom(4, 216, 100, 22, GlueAction::DeleteCharacter, 0, kButton);
-    button(l, 110, 216, 100, 22, tr("Change Realm", "Сменить мир"), true, false);
-    addBottom(110, 216, 100, 22, GlueAction::ChangeRealm, 0, kButton);
+    button(l, 110, 216, 100, 22, m.offline ? tr("Explore", "Осмотр") : tr("Change Realm", "Сменить мир"), true, false);
+    addBottom(110, 216, 100, 22, m.offline ? GlueAction::Explore : GlueAction::ChangeRealm, 0, kButton);
     button(l, 216, 216, 100, 22, tr("Back", "Назад"), true, false);
     addBottom(216, 216, 100, 22, GlueAction::Back, 0, kButton);
 }

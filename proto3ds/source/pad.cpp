@@ -46,9 +46,6 @@ bool PadConfig::load(const char* path) {
         else if (!strcmp(key, "crowd") && v >= 0 && v <= 3) crowd = (int)v;
         else if (!strcmp(key, "topmode") && v >= 0 && v <= 2) topMode = (int)v;
         else if (!strcmp(key, "fsr") && v >= 0 && v <= 4) fsr = (int)v;   // 7.27: off / sharp / 320 / 240 / 200
-        else if (!strcmp(key, "cas") && v >= 0 && v <= 1) cas = (int)v;   // 7.28: PICA-CAS on/off
-        else if (!strcmp(key, "casstr") && v >= 0 && v <= 4) casStrength = (int)v;
-        else if (!strcmp(key, "casgate") && v >= 0 && v <= 2) casGate = (int)v;
         else if (!strcmp(key, "doodads")) doodads = v != 0;
         else if (!strcmp(key, "stats")) showStats = v != 0;
         else if (!strcmp(key, "effects")) effects = v < 0 ? 0 : v > 2 ? 2 : v;
@@ -78,7 +75,6 @@ bool PadConfig::load(const char* path) {
         else if (!strcmp(key, "hlod") && (v == 0 || (v >= 80 && v <= 600))) hlod = (int)v;   // 6.57
     }
     fclose(f);
-    if (fsr == 0) cas = 0;   // 7.28: PICA-CAS needs a base mode (Sharp/320/240/200)
     return true;
 }
 
@@ -89,8 +85,8 @@ std::string PadConfig::text() const {
             toggleModifiers ? 1 : 0, invertY ? 1 : 0, camSpeed, questTracker ? 1 : 0);
     n += snprintf(b + n, sizeof b - (size_t)n, "language %d\ndist %d\ncrowd %d\ndoodads %d\nbigtext %d\ndimhud %d\nautotabs %d\nbubbles %d\n", lang, drawDist, crowd, doodads ? 1 : 0,
             bigText ? 1 : 0, dimHud ? 1 : 0, autoTabs ? 1 : 0, chatBubbles ? 1 : 0);
-    n += snprintf(b + n, sizeof b - (size_t)n, "music %d\nsfx %d\nambience %d\ntopmode %d\nfsr %d\ncas %d\ncasstr %d\ncasgate %d\neffects %d\nstats %d\nground %d\nperflog %d\ngpuearly %d\nvsync %d\nfadein %d\nhorizon %d\nstaticbatch %d\nlodpx %.2f\ndoodadrange %.1f\ndoodadwide %.2f\npvs %d\ninteriors %d\nhlod %d\n", musicVol, sfxVol,
-            ambVol, topMode, fsr, cas, casStrength, casGate, effects, showStats ? 1 : 0, groundCast, perfLog ? 1 : 0, gpuKick ? 1 : 0, vsync ? 1 : 0, fadeIn ? 1 : 0, horizon,
+    n += snprintf(b + n, sizeof b - (size_t)n, "music %d\nsfx %d\nambience %d\ntopmode %d\nfsr %d\neffects %d\nstats %d\nground %d\nperflog %d\ngpuearly %d\nvsync %d\nfadein %d\nhorizon %d\nstaticbatch %d\nlodpx %.2f\ndoodadrange %.1f\ndoodadwide %.2f\npvs %d\ninteriors %d\nhlod %d\n", musicVol, sfxVol,
+            ambVol, topMode, fsr, effects, showStats ? 1 : 0, groundCast, perfLog ? 1 : 0, gpuKick ? 1 : 0, vsync ? 1 : 0, fadeIn ? 1 : 0, horizon,
             staticBatch ? 1 : 0, lodPixels, doodadRange, doodadWide, pvs ? 1 : 0, interiorFar ? 1 : 0, hlod);
     if (n < (int)sizeof b) n += snprintf(b + n, sizeof b - (size_t)n, "pace %d\nautodetail %d\nghostfog %.2f\n", pace, autoDetail ? 1 : 0, ghostFog);   // 6.71
     return std::string(b, (size_t)std::max(0, std::min(n, (int)sizeof b - 1)));

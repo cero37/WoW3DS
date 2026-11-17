@@ -605,7 +605,8 @@ bool ObjectTable::parseMonsterMove(Reader& r, uint32_t nowMs) {
     WorldObject& o = op ? *op : tmp;
     o.pathSplineId = splineId;
     float drawn[3] = {start.x, start.y, start.z};   // 6.83: where it was drawn a moment ago
-    const bool hadPos = op && o.hasPos && !o.carried && o.type == ObjType::Unit;
+    const bool hadPos = op && o.hasPos && !o.carried &&
+                        (o.type == ObjType::Unit || (o.type == ObjType::Player && !o.self));
     if (hadPos) o.positionAt(nowMs, drawn);
     o.mv.x = start.x; o.mv.y = start.y; o.mv.z = start.z;
     if (hadPos) {

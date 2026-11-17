@@ -26,6 +26,7 @@ server).
 ## Contents
 
 - [What works](#what-works)
+- [Offline mode (one player + four AI companions)](#offline-mode-one-player--four-ai-companions)
 - [Installation](#installation)
 - [Controls](#controls)
 - [Client files and reporting problems](#client-files-and-reporting-problems)
@@ -70,6 +71,44 @@ server).
 - **Sound:** interface sounds, footsteps, world sounds, voices, zone music and ambience (OpenDSP, linked in: no DSP firmware dump and no DSP1 homebrew needed).
 
 **Not done yet:** Warden anticheat — a server that requires it drops the connection.
+
+## Offline mode (one player + four AI companions)
+
+The main menu's **Offline** button starts a fully local session: no Wi-Fi, no account, no server and no
+PC. It reuses the existing client, packets, world streaming, UI, character data and party interface,
+and adds an authoritative local world core:
+
+- **Login:** the original character screens list a local roster (up to four characters) stored in
+  `offline/profile.w3d`; creation and deletion work offline.
+- **World:** Northshire from the normal map packs, populated by a compact exported `.w3do` pack
+  (creature templates, spawns, loot, items, a small spell subset, a quest, faction hostility and four
+  companion templates). Without an exported pack the build uses a compiled-in sample.
+- **Combat:** 20 Hz fixed-step simulation — melee timers, hit/miss/crit, armour, resources, GCD and
+  cooldowns, range and target checks, threat, one DoT/buff aura, taunt, interrupt, death, ghost and
+  corpse reclaim, XP/levels, loot and money.
+- **Party:** a tank, a healer and two damage dealers join the existing party frame. They follow,
+  assist, stay and retreat (`/p follow|assist|stay|retreat`), keep the healer safe, respect threat and
+  avoid unintended pulls. The Party Director is a deterministic Utility AI.
+- **Optional tiny neural policy:** a 24→16→8 INT8 MLP (628-byte file, 512 MACs) can choose the
+  tactical category. The legal-action mask, emergency rules and the deterministic fallback always run;
+  a missing or corrupt model cannot hurt the game. On the sample benchmark it only imitates the
+  teacher, so the deterministic AI stays the default.
+- **Persistence:** journaled, checksummed, versioned save with a `.bak` fallback; autosave every 60 s.
+
+Files and the data exporter/trainer are described in
+[`docs/OFFLINE_ARCHITECTURE.md`](docs/OFFLINE_ARCHITECTURE.md) and
+[`docs/OFFLINE_DATA_FORMAT.md`](docs/OFFLINE_DATA_FORMAT.md). Short version:
+
+```
+sdmc:/3ds/w3dproto/offline.w3do         exported world pack (optional)
+sdmc:/3ds/w3dproto/offline_sample.w3do  sample pack (optional)
+sdmc:/3ds/w3dproto/offline/profile.w3d  local save (automatic)
+sdmc:/3ds/w3dproto/offline/party.w3nn   optional trained policy
+```
+
+This is the first milestone, not "offline WoW": quest dialog turn-in, vendors, professions, dungeons
+and full spell fidelity are still missing (see the unsupported list in the architecture document).
+Online mode is unchanged.
 
 ## Installation
 
@@ -277,10 +316,13 @@ converter problems send the `log_*.txt` of the output folder.
 |---|---|
 | `proto3ds/` | The 3DS application: streamer, renderer, controls, game UI, audio. `source/`, PC tests in `tests/` |
 | `net/` | Game protocol and world state (auth, world session, objects, movement, spells, quests, ...). Plain C++20, also built on the PC for tests (`net/tools/w3dlogin.cpp`) |
+| `net/offline/` | OfflineWorldCore: local account/packet translation, fixed-step combat simulation, Party Director, tiny INT8 policy, journaled save |
+| `tools/offline_data/` | Exporter/validator for the `.w3do` offline world pack (sample or vMaNGOS SQL) |
+| `tools/offline_train/` | Imitation-learning pipeline (teacher dataset, stdlib/PyTorch training, INT8 export, golden vectors) |
 | `converter/` | `w3dconv` (command line), `w3dgui` (Windows GUI), `w3dpreview` and `w3docc` (PNG previews, visibility / horizon data) and their tests |
 | `common/` | Shared binary formats (`w3d_format.h`, `w3d_ui.h`, ...) used by converter and client |
 | `tools/` | `armcheck` (ARM compile check on a PC), `questdb` (quest area data), `perflog` (performance log analysis), `forever`, font generators |
-| `docs/` | The development log (`DEVLOG_RU.md`), performance notes (`PERFLOG.md`) and the WoW Forever notes |
+| `docs/` | The development log (`DEVLOG_RU.md`), performance notes (`PERFLOG.md`), the offline architecture and data format, and the WoW Forever notes |
 | `CHANGES_*.md` | Release notes, one file per version |
 
 The detailed stage plan (`PLAN.md`) is kept with the project docs and is intentionally not part of this repository.
@@ -450,6 +492,7 @@ No console and no game data are needed. The scripts are bash; on Windows run the
 | `proto3ds/tests/run_streamer.sh <pack.w3dp>` | the streamer on the PC with sanitizers |
 | `proto3ds/tests/run_ui.sh`, `run_hud.sh`, `run_anim.sh` | UI, HUD and animation checks |
 | `net/tests/run_stage5.sh` | protocol tests against an independent Python server (includes `water_test`) |
+| `net/tests/run_offline.sh` | offline world: data exporter, M3 fight, teacher data, INT8 training, end-to-end session, benchmark |
 | `net/tests/run_713.sh` | weapon icons, Feed Pet, Cannibalize, Charge splines |
 | `tools/armcheck/armcheck.sh <files>` | ARM compile check (needs a devkitPro-like sysroot) |
 
