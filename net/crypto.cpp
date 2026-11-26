@@ -322,8 +322,10 @@ void HeaderCipher::init(const Bytes& sessionKey) {
         0xCC, 0x98, 0xAE, 0x04, 0xE8, 0x97, 0xEA, 0xCA,
         0x12, 0xDD, 0xC0, 0x93, 0x42, 0x91, 0x53, 0x57
     };
-    Bytes sendKey = hmacSha1(sessionKey, clientToServerSeed, sizeof clientToServerSeed);
-    Bytes receiveKey = hmacSha1(sessionKey, serverToClientSeed, sizeof serverToClientSeed);
+    Bytes sendKey = hmacSha1(Bytes(clientToServerSeed, clientToServerSeed + sizeof clientToServerSeed),
+                             sessionKey.data(), sessionKey.size());
+    Bytes receiveKey = hmacSha1(Bytes(serverToClientSeed, serverToClientSeed + sizeof serverToClientSeed),
+                                sessionKey.data(), sessionKey.size());
     send_.init(sendKey);
     receive_.init(receiveKey);
     on_ = !sessionKey.empty();

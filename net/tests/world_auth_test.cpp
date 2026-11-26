@@ -171,12 +171,20 @@ bool runServer(int listenFd, const Bytes& sessionKey, std::string& error) {
     HeaderCipher cipher;
     cipher.init(sessionKey);
     Bytes authResponse = {0x0C, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+    Bytes authResponseFrame;
+    appendServerPacket(authResponseFrame, cipher, 0x1EE, authResponse);
     Bytes responseBurst;
-    appendServerPacket(responseBurst, cipher, 0x1EE, authResponse);
     appendServerPacket(responseBurst, cipher, 0x2EF, Bytes{0x11});
     appendServerPacket(responseBurst, cipher, 0x255, Bytes{0x22});
     appendServerPacket(responseBurst, cipher, 0x0FD, Bytes{0x33});
-    if (!sendExact(fd, responseBurst.data(), responseBurst.size())) {
+    if (!sendExact(fd, authResponseFrame.data(), 4)) {
+        error = "could not send the encrypted auth response header";
+        ::close(fd);
+        return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    if (!sendExact(fd, authResponseFrame.data() + 4, authResponseFrame.size() - 4) ||
+        !sendExact(fd, responseBurst.data(), responseBurst.size())) {
         error = "could not send the encrypted auth response burst";
         ::close(fd);
         return false;
@@ -235,11 +243,14 @@ int main() {
     const bool started =
         client.start("127.0.0.1:" + std::to_string(ntohs(address.sin_port)), "B3H3MOTH", sessionKey);
     std::vector<uint16_t> receivedBurst;
+    bool sawAuthResponseDiagnostic = false;
     client.onPacket = [&](const Packet& packet) { receivedBurst.push_back(packet.opcode); };
     const uint64_t deadline = nowMs() + 10000;
     while (started && client.state() != WorldClient::State::CharSelect &&
            client.state() != WorldClient::State::Failed && nowMs() < deadline) {
         client.update();
+        sawAuthResponseDiagnostic = sawAuthResponseDiagnostic ||
+            client.statusStage() == "waiting auth_resp: rx=4 op=0x01EE sz=15";
         sleepMs(1);
     }
     const bool receivedNine = client.state() == WorldClient::State::CharSelect && client.characters().size() == 9;
@@ -250,7 +261,7 @@ int main() {
     server.join();
     ::close(listener);
 
-    if (!started || !receivedNine || !receivedBurstInOrder || !serverOk) {
+    if (!started || !receivedNine || !receivedBurstInOrder || !sawAuthResponseDiagnostic || !serverOk) {
         std::fprintf(stderr, "world auth handshake test failed: client=%s, server=%s\n",
                      client.error().c_str(), serverError.c_str());
         return 1;

@@ -16,17 +16,27 @@ int main() {
 
     Bytes clientHeader = {0x00, 0x18, 0x01, 0x00, 0x00, 0x00};
     client.encrypt(clientHeader.data(), clientHeader.size());
-    const Bytes expectedClientHeader = {0x9B, 0xF1, 0x53, 0x52, 0x18, 0xFA};
+    const Bytes expectedClientHeader = {0xE6, 0x4F, 0x89, 0xE6, 0xA6, 0xCE};
     if (clientHeader != expectedClientHeader) {
         std::puts("WotLK client-to-server ARC4 vector mismatch");
         return 1;
     }
 
-    Bytes serverHeader = {0x06, 0xDD, 0x27, 0x35};
+    Bytes serverHeader = {0xC2, 0x47, 0x71, 0xC4};
     server.decrypt(serverHeader.data(), serverHeader.size());
     const Bytes expectedServerHeader = {0x18, 0x00, 0x01, 0x00};
     if (serverHeader != expectedServerHeader) {
         std::puts("WotLK server-to-client ARC4 vector mismatch");
+        return 1;
+    }
+
+    HeaderCipher splitReceive;
+    splitReceive.init(sessionKey);
+    Bytes splitServerHeader = {0xC2, 0x47, 0x71, 0xC4};
+    splitReceive.decrypt(splitServerHeader.data(), 2);
+    splitReceive.decrypt(splitServerHeader.data() + 2, splitServerHeader.size() - 2);
+    if (splitServerHeader != expectedServerHeader) {
+        std::puts("WotLK receive ARC4 stream state was not preserved between calls");
         return 1;
     }
 

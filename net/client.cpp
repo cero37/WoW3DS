@@ -1,6 +1,7 @@
 #include <algorithm>
 #include "client.hpp"
 
+#include <cstdio>
 #include <cstring>
 
 #include "wire.hpp"
@@ -263,7 +264,28 @@ std::string WorldClient::statusStage() const {
     switch (state_) {
         case State::Connecting: return "connecting world";
         case State::WaitChallenge: return "waiting auth_challenge";
-        case State::WaitAuthResponse: return "waiting auth_resp";
+        case State::WaitAuthResponse: {
+            std::string status = "waiting auth_resp";
+            if (!inBuf_.empty()) {
+                status += ": rx=" + std::to_string(inBuf_.size());
+                if (headerDecrypted_ >= 4) {
+                    const bool extended = (inBuf_[0] & 0x80) != 0;
+                    const size_t headerSize = extended ? 5 : 4;
+                    if (!extended || headerDecrypted_ >= headerSize) {
+                        const size_t encodedSize = extended
+                            ? (((size_t)(inBuf_[0] & 0x7F) << 16) | ((size_t)inBuf_[1] << 8) | inBuf_[2])
+                            : (((size_t)inBuf_[0] << 8) | inBuf_[1]);
+                        const size_t packetSize = headerSize + (encodedSize >= 2 ? encodedSize - 2 : 0);
+                        const size_t opcodeOffset = headerSize - 2;
+                        const uint16_t opcode = (uint16_t)(inBuf_[opcodeOffset] | (inBuf_[opcodeOffset + 1] << 8));
+                        char details[40];
+                        std::snprintf(details, sizeof details, " op=0x%04X sz=%zu", opcode, packetSize);
+                        status += details;
+                    }
+                }
+            }
+            return status;
+        }
         case State::WaitCharEnum: return "waiting char_enum";
         case State::Failed: return err_;
         case State::InQueue: return "waiting in login queue";
