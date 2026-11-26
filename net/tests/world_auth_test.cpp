@@ -65,43 +65,49 @@ bool receiveClientPacket(int fd, HeaderCipher& cipher, bool encrypted, uint32_t&
 }
 
 bool verifyAddonInfo(const Bytes& authSession, const Bytes& sessionKey) {
+    static const uint8_t officialAddonInfoCompressed[] = {
+        0x78, 0x9c, 0x75, 0xd2, 0xc1, 0x4e, 0xc3, 0x30, 0x0c, 0xc6, 0xf1, 0xf0, 0x14, 0x5c,
+        0xf6, 0x32, 0x74, 0x48, 0x53, 0xa5, 0xe5, 0x42, 0xc3, 0x19, 0xb9, 0xc9, 0x47, 0x63,
+        0x9a, 0x38, 0x55, 0x9a, 0x8e, 0x6d, 0xef, 0x88, 0x78, 0x25, 0xc4, 0x0d, 0x24, 0xf7,
+        0xfc, 0xb3, 0x6c, 0xe9, 0x2f, 0x3f, 0x1a, 0x63, 0xba, 0xc4, 0xf7, 0x3b, 0xd5, 0xf0,
+        0xf6, 0xe4, 0x23, 0xe3, 0x82, 0x0c, 0x69, 0xaf, 0xbd, 0x79, 0xc8, 0x9f, 0x87, 0xb3,
+        0xf9, 0xe7, 0x15, 0x42, 0xba, 0x6c, 0xbe, 0x71, 0x11, 0xd5, 0x3a, 0xaa, 0x23, 0xea,
+        0x1a, 0xcb, 0xb2, 0xc3, 0xad, 0x25, 0xbc, 0x33, 0x52, 0xb0, 0x2c, 0x9c, 0x69, 0xd1,
+        0x86, 0x58, 0x02, 0xcb, 0xa4, 0x2e, 0x38, 0x52, 0x82, 0x04, 0xaa, 0x1a, 0x95, 0x3c,
+        0x52, 0x3b, 0x97, 0x69, 0xd7, 0x1c, 0xae, 0x4d, 0xc1, 0x67, 0x8c, 0xdb, 0xe4, 0x4a,
+        0x49, 0xab, 0x82, 0x27, 0x7b, 0x8c, 0xa4, 0x17, 0x3a, 0xd9, 0x61, 0xab, 0x17, 0xdc,
+        0x74, 0x4c, 0xb7, 0x25, 0xea, 0xb2, 0x71, 0x0a, 0x1d, 0xc9, 0xac, 0x6a, 0x2f, 0xeb,
+        0x02, 0xaf, 0x1f, 0xec, 0x1b, 0xf2, 0x50, 0xfc, 0x8c, 0xb6, 0x97, 0xc7, 0x92, 0xaf,
+        0x45, 0x95, 0x17, 0xe2, 0xa0, 0x82, 0xfb, 0x2d, 0xaa, 0xdf, 0x73, 0x9c, 0x61, 0x49,
+        0x68, 0x82, 0xd6, 0xdb, 0x95, 0x19, 0xfa, 0x13, 0xb8, 0x4a, 0x01, 0xc3, 0xcc, 0x29,
+        0xed, 0x31, 0x0b, 0xea, 0x5f, 0xfb, 0x8a, 0xdf, 0x1f, 0x3f, 0xe4, 0x89, 0xc9, 0x9c,
+    };
+    if (authSession.size() != 279) return false;
     Reader packet(authSession);
-    if (packet.u32() != 12340 || packet.u32() != 0 || packet.cstr() != "TEST" || packet.u32() != 0)
+    if (packet.u32() != 12340 || packet.u32() != 0 || packet.cstr() != "B3H3MOTH" || packet.u32() != 0)
         return false;
     Bytes clientSeed = packet.bytes(4);
-    if (packet.u32() != 0 || packet.u32() != 0 || packet.u32() != 0 || packet.u32() != 3)
+    if (packet.u32() != 0 || packet.u32() != 0 || packet.u32() != 0 || packet.u64() != 0)
         return false;
     Bytes digest = packet.bytes(20);
     Writer digestInput;
-    digestInput.raw("TEST", 4);
+    digestInput.raw("B3H3MOTH", 8);
     digestInput.u32(0);
     digestInput.raw(clientSeed);
     digestInput.raw(Bytes{1, 2, 3, 4});
     digestInput.raw(sessionKey);
     if (digest != sha1(digestInput.b) || packet.left() < 4) return false;
     const uint32_t unpackedSize = packet.u32();
-    if (unpackedSize != 465) return false;
-    const size_t pos = packet.pos;
-    if (pos + 2 > authSession.size() || authSession[pos] != 0x78 || authSession[pos + 1] != 0x9C)
+    if (unpackedSize != 0x0000029E || packet.left() != sizeof(officialAddonInfoCompressed))
         return false;
 
-    Bytes addon;
-    if (!zlibInflate(authSession.data() + pos, authSession.size() - pos, addon, unpackedSize))
+    Bytes compressed = packet.bytes(sizeof(officialAddonInfoCompressed));
+    if (packet.bad || std::memcmp(compressed.data(), officialAddonInfoCompressed,
+                                  sizeof(officialAddonInfoCompressed)) != 0)
         return false;
-    Reader r(addon);
-    static const char* const officialAddons[] = {
-        "Blizzard_AchievementUI", "Blizzard_ArenaUI", "Blizzard_AuctionUI",
-        "Blizzard_BattlefieldMinimap", "Blizzard_BindingUI", "Blizzard_CombatLog",
-        "Blizzard_CombatText", "Blizzard_GlyphUI", "Blizzard_InspectUI",
-        "Blizzard_MacroUI", "Blizzard_RaidUI", "Blizzard_TalentUI",
-        "Blizzard_TimeManager", "Blizzard_TradeSkillUI", "Blizzard_TrainerUI",
-        "Blizzard_VehicleUI"
-    };
-    if (r.u32() != sizeof(officialAddons) / sizeof(officialAddons[0])) return false;
-    for (const char* name : officialAddons) {
-        if (r.cstr() != name || r.u8() != 1 || r.u32() != 0x4C1C776D || r.u32() != 0) return false;
-    }
-    return !r.bad && r.u32() != 0 && r.left() == 0;
+    Bytes addon;
+    return zlibInflate(compressed.data(), compressed.size(), addon, unpackedSize) &&
+           addon.size() == 0x0000029E;
 }
 
 void appendServerPacket(Bytes& out, HeaderCipher& cipher, uint16_t opcode, const Bytes& payload) {
@@ -226,7 +232,8 @@ int main() {
     std::thread server([&] { serverOk = runServer(listener, sessionKey, serverError); });
 
     WorldClient client;
-    const bool started = client.start("127.0.0.1:" + std::to_string(ntohs(address.sin_port)), "TEST", sessionKey);
+    const bool started =
+        client.start("127.0.0.1:" + std::to_string(ntohs(address.sin_port)), "B3H3MOTH", sessionKey);
     std::vector<uint16_t> receivedBurst;
     client.onPacket = [&](const Packet& packet) { receivedBurst.push_back(packet.opcode); };
     const uint64_t deadline = nowMs() + 10000;
@@ -248,6 +255,6 @@ int main() {
                      client.error().c_str(), serverError.c_str());
         return 1;
     }
-    std::puts("WotLK world auth handshake passed (16-addon AuthSession, encrypted response burst, CHAR_ENUM)");
+    std::puts("WotLK world auth handshake passed (captured AuthSession, encrypted response burst, CHAR_ENUM)");
     return 0;
 }
