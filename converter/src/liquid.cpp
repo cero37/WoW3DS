@@ -13,6 +13,7 @@
 #include "pipeline/adt_loader.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -42,7 +43,7 @@ std::vector<McnkLiquid> scanMclq(const std::vector<uint8_t>& b, ConvStats& st) {
             const uint8_t* h = &b[p + 8];
             const uint32_t flags = rd32(h), ofs = rd32(h + 0x60), size = rd32(h + 0x64);
             McnkLiquid m{index, flags, nullptr, 0};
-            const int wanted = __builtin_popcount(flags & 0x3C);
+           const int wanted = std::popcount(flags & 0x3Cu);
             if (ofs && wanted) {
                 const size_t end = p + 8 + len;   // MCLQ lies inside the MCNK
                 size_t at = 0;
