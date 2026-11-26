@@ -23,12 +23,8 @@ namespace w3d {
 
 // ------------------------------------------------------------ progress (console window, not the log)
 // One updating line: throttled to 4 per second unless force. progressDone ends it with a newline.
-void progress(bool force, const char* fmt, ...) #if defined(__GNUC__) || defined(__clang__)
-__attribute__((format(printf, 2, 3)))
-#endif;
-void progressDone(const char* fmt, ...) #if defined(__GNUC__) || defined(__clang__)
-__attribute__((format(printf, 1, 2)))
-#endif;
+void progress(bool force, const char* fmt, ...);
+void progressDone(const char* fmt, ...);
 
 // ------------------------------------------------------------ crash guard (crashguard.cpp)
 // installCrashGuard(): call first thing in main. If the process dies (access violation, abort, uncaught exception),
@@ -36,9 +32,8 @@ __attribute__((format(printf, 1, 2)))
 // (stdout to a pipe/file is block-buffered: without this the log lost its last few KB and stopped mid-line).
 void installCrashGuard();
 // trace(): remember what is being converted right now ("WMO <path> group 3") and flush stdout. Cheap enough per asset.
-void trace(const char* fmt, ...) #if defined(__GNUC__) || defined(__clang__)
-__attribute__((format(printf, 1, 2)))
-#endif;
+void trace(const char* fmt, ...);
+
 
 // ------------------------------------------------------------ settings
 struct Options {
