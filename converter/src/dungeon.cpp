@@ -163,12 +163,12 @@ bool convertDungeon(const Options& optIn, const DataDir& data, PackWriter& pack,
 std::vector<DungeonMap> listDungeonMaps(const DataDir& data) {
     std::vector<DungeonMap> r;
     DbcTable maps;
-    if (!maps.load(data, "Map.dbc") || maps.fields < 2) {
+    if (!maps.load(data, "Map.dbc") || maps.fields <= dbc335a::map::Directory) {
         std::fputs("dungeons: Map.dbc not found\n", stderr);
         return r;
     }
     for (uint32_t i = 0; i < maps.records; ++i) {
-        std::string dir = maps.str(i, 1);
+        std::string dir = maps.str(i, dbc335a::map::Directory);
         if (dir.empty()) continue;
         if (isDungeonMap(data, dir)) r.push_back({maps.u32(i, 0), dir});
     }

@@ -632,7 +632,7 @@ void createControls() {
     int y = 10;
     // ---- folders
     group(L"Folders", kM, y, gw, 118);
-    label(L"WoW 1.12 Data folder (the one with the .MPQ files)", kM + 12, y + 22, 400);
+    label(L"WoW 3.3.5a Data folder (the one with the .MPQ files)", kM + 12, y + 22, 400);
     mk(L"EDIT", L"", edit, kM + 12, y + 40, gw - 130, 24, ID_DATA, WS_EX_CLIENTEDGE);
     mk(L"BUTTON", L"Browse...", WS_TABSTOP, kM + gw - 108, y + 40, 96, 24, ID_DATA_BROWSE);
     label(L"Output folder (copy its contents to sdmc:/3ds/w3dproto/ on the SD card)", kM + 12, y + 70, 500);
@@ -726,7 +726,7 @@ LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
         case WM_COMMAND:
             switch (LOWORD(w)) {
                 case ID_DATA_BROWSE: {
-                    std::wstring p = browse(h, L"Data folder of the WoW 1.12 client");
+                    std::wstring p = browse(h, L"Data folder of the WoW 3.3.5a client");
                     if (!p.empty()) { setText(ID_DATA, p); scanAvailableLanguages(true, true); }
                     return 0;
                 }

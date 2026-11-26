@@ -1,6 +1,6 @@
 # WoW3DS
 
-**World of Warcraft 1.12.1 (Vanilla) on Nintendo 3DS.**
+**World of Warcraft: Wrath of the Lich King 3.3.5a (build 12340) on Nintendo 3DS.**
 
 WoW3DS is an experimental, unofficial World of Warcraft client written from scratch in C++ for the **New Nintendo 3DS / New Nintendo 2DS XL**, using devkitARM, libctru and citro3d. The project also includes a PC converter that transforms files from your own compatible World of Warcraft installation into packs the console can stream.
 
@@ -10,7 +10,7 @@ An Old Nintendo 3DS / 2DS control scheme is available, but performance and compa
 >
 > **Release notes:** [0.8.1](CHANGES_0.8.1.md) · [0.8.0](CHANGES_0.8.0.md) · [More changes](CHANGES_7.27.md)
 
-**No Blizzard game files, textures, models, or sounds are included.** You must provide your own legally obtained World of Warcraft 1.12.1 or compatible Turtle WoW game files (`Data/*.MPQ`) and connect to a compatible server. The client was developed against vMaNGOS-compatible Vanilla servers; Turtle WoW requires selecting the corresponding protocol on the main screen.
+**No Blizzard game files, textures, models, or sounds are included.** You must provide your own legally obtained Wrath of the Lich King 3.3.5a (build 12340) game files (`Data/*.MPQ`) and connect to a compatible TrinityCore or AzerothCore server.
 
 ## Contents
 
@@ -46,9 +46,9 @@ An Old Nintendo 3DS / 2DS control scheme is available, but performance and compa
 - **Also available:** Old Nintendo 3DS / 2DS with the alternate control scheme, with reduced performance expectations.
 - Homebrew Launcher for `.3dsx`, or a compatible CIA installer for `.cia` files.
 - An SD card formatted as FAT32. A test area needs substantially less space than a complete game conversion; a full conversion may need several gigabytes.
-- Your own compatible World of Warcraft game installation containing the original MPQ data.
+- Your own World of Warcraft: Wrath of the Lich King 3.3.5a (build 12340) installation containing the original MPQ data.
 - A PC to run the converter (the prepackaged Windows converter is the easiest option).
-- A compatible Vanilla 1.12.1 or Turtle WoW server and account.
+- A compatible TrinityCore or AzerothCore 3.3.5a server and account.
 
 ## Installation
 
@@ -90,12 +90,12 @@ The package may include:
 **Batch file:** From a command prompt in the converter directory:
 
 ```bat
-all.bat "D:\WoW 1.12\Data" "D:\w3d_out"
+all.bat "D:\World of Warcraft 3.3.5\Data" "D:\w3d_out"
 ```
 
 The first argument is the game's `Data` directory; the second is the output directory. The full conversion can take hours and several gigabytes. Use `convert.bat` to create a smaller test area first.
 
-Conversion reads the MPQ archives directly; you do not need to extract them beforehand.
+Conversion reads WotLK MPQ archives directly, applying locale and patch archives by priority; you do not need to extract them beforehand.
 
 ### 4. Copy packs to the SD card
 
@@ -126,7 +126,7 @@ Start `w3dproto` through Homebrew Launcher or the installed CIA. On the login sc
 
 Choose a realm and character to enter the world. Server/account and last-used selections may be saved in `login.cfg`; **the password is not saved**.
 
-**Turtle WoW:** Select the **Turtle WoW protocol on the main screen** before connecting. For a standard Vanilla 1.12.1 server, use the Vanilla protocol.
+The client uses the WotLK 3.3.5a (build 12340) protocol; there is no Vanilla/Turtle protocol selector.
 
 ### Updating
 

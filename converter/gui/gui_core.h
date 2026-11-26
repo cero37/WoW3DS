@@ -10,7 +10,7 @@
 namespace w3gui {
 
 struct Settings {
-    std::string data;                 // WoW 1.12 Data folder (MPQ)
+    std::string data;                 // WoW 3.3.5a Data folder (MPQ)
     std::string locale = "enUS";       // 7.14: game language of the DBC texts (--locale)
     std::string out;                  // the one output folder
     std::string map = "Azeroth";      // Azeroth = Eastern Kingdoms, Kalimdor, or any other map name

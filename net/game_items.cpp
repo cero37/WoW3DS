@@ -440,7 +440,7 @@ const WorldObject* GameSession::objectForItem() const {
     int bestRank = 0;
     for (const auto& [guid, o] : objects.all()) {
         if (o.type != ObjType::GameObject || !o.hasPos) continue;
-        const uint32_t type = o.field(UF::GAMEOBJECT_TYPE_ID);
+        const uint32_t type = o.goType();
         // goobers (quest objects), chests, quest givers, spell focuses (an altar, a brazier); the server's "usable for your quest"
         // flag first
         if (type != 10 && type != 3 && type != 2 && type != 8 && type != 1 && type != 22) continue;

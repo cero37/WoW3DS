@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
     CHECK(r.step(0, 160, 24 + 2 * 34 + 10) == GlueAction::EditPassword);   // tap the password row
     CHECK(r.step(0, 160, 140) == GlueAction::Login);
     CHECK(r.step(0, 50, 180) == GlueAction::Offline);
-    CHECK(r.step(0, 160, 180) == GlueAction::ToggleProtocol);
+    CHECK(r.step(0, 160, 180) == GlueAction::ToggleLog);
     // waiting and errors
     r.m.wait = "Connecting...";
     r.step();

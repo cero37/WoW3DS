@@ -1,6 +1,6 @@
-// game_social.cpp — chat, target and melee of GameSession (stages 5.6/5.7).
+// game_social.cpp — WotLK chat, target and melee of GameSession.
 //
-// Layouts from vMaNGOS (1.12.1): ChatHandler::BuildChatPacket, WorldPackets::Chat::ChatMessage,
+// Layouts from TrinityCore/AzerothCore 3.3.5a: ChatHandler and WorldPackets::Chat,
 // WorldPackets::Combat (AttackStart/AttackStop/MeleeAttackingStateUpdate), Player::SendLogXPGain,
 // Channel::MakeNotifyPacket. (Loot moved to game_items.cpp in stage 5.10.)
 #include "game.hpp"
@@ -22,6 +22,7 @@ enum : uint16_t {
     CMSG_WHO = 0x062, SMSG_WHO = 0x063, MSG_RANDOM_ROLL = 0x1FB, SMSG_SERVER_MESSAGE = 0x291, SMSG_CHAT_WRONG_FACTION = 0x219,
     SMSG_ZONE_UNDER_ATTACK = 0x254, SMSG_RAID_INSTANCE_MESSAGE = 0x2FA, SMSG_CHAT_RESTRICTED = 0x2FD,
     SMSG_CHAT_PLAYER_AMBIGUOUS = 0x32D,
+    SMSG_GM_MESSAGECHAT = 0x3B3,
     CMSG_JOIN_CHANNEL = 0x097, CMSG_MESSAGECHAT = 0x095, SMSG_MESSAGECHAT = 0x096, SMSG_CHANNEL_NOTIFY = 0x099,
     CMSG_SET_SELECTION = 0x13D, CMSG_ATTACKSWING = 0x141, CMSG_ATTACKSTOP = 0x142,
     SMSG_ATTACKSTART = 0x143, SMSG_ATTACKSTOP = 0x144, SMSG_ATTACKSWING_NOTINRANGE = 0x145,
@@ -52,7 +53,7 @@ const char* Chat::typeName(uint8_t t) {
         case Say: return "say"; case Party: return "party"; case Raid: return "raid"; case Guild: return "guild";
         case Officer: return "officer"; case Yell: return "yell"; case Whisper: return "whisper";
         case WhisperInform: return "to"; case Emote: case TextEmote: return "emote"; case System: return "system";
-        case MonsterSay: return "npc say"; case MonsterYell: return "npc yell"; case MonsterEmote: return "npc emote";
+        case MonsterSay: return "npc say"; case MonsterParty: return "npc party"; case MonsterYell: return "npc yell"; case MonsterEmote: return "npc emote";
         case Channel: return "channel"; case MonsterWhisper: return "npc whisper"; case RaidLeader: return "raid leader";
         case RaidWarning: return "raid warning"; case Battleground: return "bg"; case BattlegroundLeader: return "bg leader";
         case ChannelNotice: return "channel notice"; case Afk: return "afk"; case Dnd: return "dnd"; case Ignored: return "ignored";
@@ -706,7 +707,7 @@ uint64_t GameSession::softInteract(const float pos[3], float yaw, uint32_t nowMs
         if (o.self || !o.hasPos || (o.type != ObjType::Unit && o.type != ObjType::GameObject)) continue;
         const char* v = useVerb(o);
         if (!v) continue;
-        const bool bobber = o.type == ObjType::GameObject && o.field(UF::GAMEOBJECT_TYPE_ID) == 17;   // ours (useVerb)
+        const bool bobber = o.type == ObjType::GameObject && o.goType() == 17;   // ours (useVerb)
         float range = bobber ? (float)kFishingRange : o.type == ObjType::Unit && o.dead() ? 5.0f : 5.5f;
         float p[3];
         o.positionAt(nowMs, p);
@@ -802,33 +803,50 @@ bool GameSession::takeFacingRequest(float* yaw) {
 bool GameSession::handleSocial(uint16_t op, const Bytes& data, uint32_t nowMs) {
     Reader r(data);
     switch (op) {
-        case SMSG_MESSAGECHAT: {
+        case SMSG_MESSAGECHAT:
+        case SMSG_GM_MESSAGECHAT: {
             ChatLine l;
             l.ms = nowMs;
             l.type = r.u8();
             l.lang = r.u32();
+            l.sender = r.u64();
+            r.u32(); // chat flags
             switch (l.type) {
-                case Chat::MonsterWhisper: case Chat::MonsterEmote:
-                    if (!readSizedName(r, l.name)) return true;
-                    r.u64();   // target
-                    break;
-                case Chat::Say: case Chat::Party: case Chat::Yell:
-                    l.sender = r.u64();
-                    r.u64();   // written twice
-                    break;
-                case Chat::MonsterSay: case Chat::MonsterYell:
-                    l.sender = r.u64();
+                case Chat::WhisperForeign:
                     if (!readSizedName(r, l.name)) return true;
                     r.u64();
                     break;
+                case Chat::MonsterWhisper:
+                case Chat::MonsterEmote:
+                case Chat::MonsterSay:
+                case Chat::MonsterParty:
+                case Chat::MonsterYell: {
+                    if (!readSizedName(r, l.name)) return true;
+                    const uint64_t target = r.u64();
+                    const uint16_t high = (uint16_t)(target >> 48);
+                    std::string targetName;
+                    if (target && high != 0 && high != 0xF140 && !readSizedName(r, targetName)) return true;
+                    break;
+                }
                 case Chat::Channel:
                     l.channel = r.cstr();
-                    r.u32();   // player rank
-                    l.sender = r.u64();
+                    r.u64(); // target GUID
                     break;
-                default:
-                    l.sender = r.u64();
+                case Chat::Achievement:
+                case Chat::GuildAchievement:
+                    r.u64(); // target GUID
                     break;
+                default: {
+                    if (op == SMSG_GM_MESSAGECHAT && !readSizedName(r, l.name)) return true;
+                    const uint64_t target = r.u64();
+                    if ((l.type == 0x24 || l.type == 0x25 || l.type == 0x26) && target &&
+                        (uint16_t)(target >> 48) != 0 && (uint16_t)(target >> 48) != 0xF140)
+                    {
+                        std::string targetName;
+                        if (!readSizedName(r, targetName)) return true;
+                    }
+                    break;
+                }
             }
             uint32_t len = r.u32();
             if (r.bad || len > 4096 || len > r.left()) return true;
@@ -836,6 +854,7 @@ bool GameSession::handleSocial(uint16_t op, const Bytes& data, uint32_t nowMs) {
             r.pos += len;
             while (!l.text.empty() && l.text.back() == '\0') l.text.pop_back();
             r.u8();   // chat tag (AFK/DND/GM)
+            if (l.type == Chat::Achievement || l.type == Chat::GuildAchievement) r.u32();
             // 6.99: addon messages (language LANG_ADDON = -1: SendAddonMessage, "prefix\tdata") are for addons, never shown -
             // the original client turns them into CHAT_MSG_ADDON. OctoWoW's server addons (AIO "SAIO...", OctoRadio's
             // "now playing" JSON) whisper them to the player: they filled the chat as whispers from and to ourselves.
@@ -1005,8 +1024,9 @@ bool GameSession::handleSocial(uint16_t op, const Bytes& data, uint32_t nowMs) {
             return true;
         }
         case SMSG_ATTACKSTOP: {
-            uint64_t a = r.packedGuid(), v = r.packedGuid();
-            (void)v;
+            uint64_t a = r.packedGuid();
+            r.packedGuid(); // victim GUID
+            r.u32(); // target-dead flag
             if (r.bad) return true;
             if (WorldObject* o = objects.find(a)) o->meleeVictim = 0;
             if (a == self_) {

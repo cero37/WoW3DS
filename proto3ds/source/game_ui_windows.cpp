@@ -970,9 +970,9 @@ void GameUi::drawPet(w3n::GameSession& g, const Input& in) {
     list_.bar(160, kTop + 20, 150, 6, u->maxHealth() ? (float)u->health() / u->maxHealth() : 0, hudRgba(30, 200, 30));
     {
         const uint8_t pt = (uint8_t)((u->field(w3n::UF::UNIT_BYTES_0) >> 24) & 0xFF);
-        const uint8_t type = pt > 3 ? 0 : pt;
+        const uint8_t type = pt > 6 ? 0 : pt;
         const uint32_t mx = u->field((uint16_t)(w3n::UF::UNIT_MAXPOWER1 + type));
-        if (mx) list_.bar(160, kTop + 28, 150, 4, (float)u->field((uint16_t)(w3n::UF::UNIT_POWER1 + type)) / mx, powerColor(type));
+        if (type != 5 && mx) list_.bar(160, kTop + 28, 150, 4, (float)u->field((uint16_t)(w3n::UF::UNIT_POWER1 + type)) / mx, powerColor(type));
     }
     // ---- orders and stances (left)
     list_.text(10, kTop + 36, tr("Orders", "Приказы"), kGold);

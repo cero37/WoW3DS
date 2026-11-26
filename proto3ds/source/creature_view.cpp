@@ -489,7 +489,8 @@ void updateWorn(UnitWorn& w, const CreatureSeen& c, int slot) {
     const W3dItemDisplay& d = w.item->d;
     uint32_t id[2] = {0, 0};
     if (slot == W3D_EQ_HEAD) {
-        if (c.lookParts.race >= 1 && c.lookParts.race <= 8) id[0] = d.helm[(c.lookParts.race - 1) * 2 + (c.lookParts.sex & 1)];
+        if (c.lookParts.race >= 1 && c.lookParts.race <= 11 && c.lookParts.race != 9)
+            id[0] = d.helm[(c.lookParts.race - 1) * 2 + (c.lookParts.sex & 1)];
     } else if (slot == W3D_EQ_SHOULDERS) {
         id[0] = d.model[0] ? d.model[0] : d.model[1];
         id[1] = d.model[1] ? d.model[1] : d.model[0];

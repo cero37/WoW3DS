@@ -25,8 +25,7 @@ const SceneSrc kScenes[] = {
     {W3D_GLUE_MAINMENU, "UI_MainMenu"},
     {1, "UI_Human"}, {2, "UI_Orc"}, {3, "UI_Dwarf"}, {4, "UI_NightElf"}, {5, "UI_Scourge"}, {6, "UI_Tauren"},
     {7, "UI_Dwarf"}, {8, "UI_Orc"},
-    // 6.99: Turtle WoW's races - their own backdrop when the client has one, else the nearest (first that exists)
-    {9, "UI_Goblin|UI_Orc"}, {10, "UI_HighElf|UI_BloodElf|UI_NightElf"},
+    {10, "UI_BloodElf"}, {11, "UI_Draenei"},
 };
 }  // namespace
 
@@ -47,7 +46,7 @@ bool convertGlueScenes(const Options& oIn, const DataDir& data, PackWriter& pack
                 path = std::string("Interface\\Glues\\Models\\") + n + "\\" + n + ".m2";
                 if (done.count(path) || data.read(path, probe)) break;
             }
-            if (sc.id > 8 && !done.count(path) && !data.read(path, probe)) continue;   // a vanilla client: no such race, not missing
+            if (sc.id > 8 && !done.count(path) && !data.read(path, probe)) continue;
         }
         auto it = done.find(path);
         W3dGlueScene g{};

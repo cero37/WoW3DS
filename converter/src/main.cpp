@@ -1,4 +1,4 @@
-// w3dconv — offline converter: WoW 1.12 loose files -> W3DP pack for the 3DS client.
+// w3dconv — offline converter: WoW WotLK 3.3.5a data -> W3DP pack for the 3DS client.
 #include "conv.h"
 #include "casc_source.h"
 

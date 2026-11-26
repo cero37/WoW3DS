@@ -1,4 +1,4 @@
-// login.hpp — log into a vanilla server from the 3DS (stage 4), through the original client's screens (stage 5.29):
+// login.hpp — log into a WotLK server from the 3DS (stage 4), through the original client's screens (stage 5.29):
 // login, realm list, character list and creation (glue_ui.cpp draws them, this class does what they ask: the network and
 // the software keyboard). While the screens are up they own both screens and the buttons; main.cpp draws their 3D scene
 // (scene()) and the two draw lists.
@@ -93,8 +93,6 @@ private:
 
     Phase phase_ = Phase::Menu;
     std::string server_ = "127.0.0.1:3724", account_, password_, charName_, lastRealm_, lastChar_;
-    int protocol_ = 3;
-    bool turtle_ = false;   // 6.58: log in as the Turtle WoW 1.18.1 client (build 7272; world 5875)
     bool logOn_ = false;           // login.cfg "log=1": record packets to session.w3dl
     bool offline_ = false;         // the Offline local session is active
     w3n::offline::OfflineSession offlineSession_;

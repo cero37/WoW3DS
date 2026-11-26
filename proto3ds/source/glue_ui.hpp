@@ -19,7 +19,7 @@ enum class GlueScreen : uint8_t { Login, RealmList, CharSelect, CharCreate };
 
 enum class GlueAction : uint8_t {
     None,
-    EditServer, EditAccount, EditPassword, Login, Offline, Quit, ToggleProtocol, ToggleLog,   // login
+    EditServer, EditAccount, EditPassword, Login, Offline, Quit, ToggleLog,                   // login
     CancelWait, DismissMessage,                                                             // dialogs
     RealmAccept, RealmCancel,                                                               // realm list
     EnterWorld, CreateNew, DeleteCharacter, ChangeRealm, Back, Explore,                    // character list
@@ -31,8 +31,6 @@ struct GlueModel {
     GlueScreen screen = GlueScreen::Login;
     std::string server, account;
     bool havePassword = false;
-    int protocol = 3;
-    bool turtle = false;   // 6.58
     bool packetLog = false;
     std::string wait;              // non-empty: a "Connecting..." dialog over the screen (Cancel unless waitFixed)
     bool waitFixed = false;        // cannot be cancelled (entering the world, creating a character)

@@ -112,14 +112,14 @@ int convertAll(const Options& oIn, const DataDir& data, const AllOptions& ao, Ui
     struct Done { uint32_t id; std::string dir, file; size_t tiles; uint64_t bytes; };
     std::vector<Done> done;
     DbcTable maps;
-    if (!maps.load(data, "Map.dbc") || maps.fields < 2) {
+    if (!maps.load(data, "Map.dbc") || maps.fields <= dbc335a::map::Directory) {
         std::fputs("--all: Map.dbc not found\n", stderr);
         return 2;
     }
     std::vector<std::pair<uint32_t, std::string>> list;
     for (uint32_t r = 0; r < maps.records; ++r) {
         const uint32_t id = maps.u32(r, 0);
-        std::string dir = maps.str(r, 1);
+        std::string dir = maps.str(r, dbc335a::map::Directory);
         if (dir.empty()) continue;
         if (!ao.maps.empty() && !ao.maps.count(id)) continue;
         if (ao.maps.empty() && ao.skip.count(id)) {

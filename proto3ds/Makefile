@@ -31,7 +31,7 @@ GRAPHICS	:=
 ROMFS		:=	romfs
 
 APP_TITLE	:=	w3dproto
-APP_DESCRIPTION	:=	WoW 1.12 -> 3DS render prototype
+APP_DESCRIPTION	:=	WoW 3.3.5a -> 3DS client
 APP_AUTHOR	:=	wow3ds
 
 #---------------------------------------------------------------------------------

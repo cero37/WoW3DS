@@ -247,7 +247,7 @@ const char* GameSession::useVerb(const WorldObject& o) const {
 
 GameSession::ObjectAction GameSession::objectAction(const WorldObject& o) const {
     ObjectAction a;
-    const uint32_t type = o.field(UF::GAMEOBJECT_TYPE_ID), dyn = o.field(UF::GAMEOBJECT_DYN_FLAGS);
+    const uint32_t type = o.goType(), dyn = o.field(UF::GAMEOBJECT_DYN_FLAGS);
     if (type == kGoMailbox) { a.verb = "Mail"; return a; }
     if (type == 17) {   // stage 5.26: our own fishing bobber - catch the fish when it bites (the others' are not ours to use)
         if (o.guid == fishingBobber()) a.verb = fishBiting(now_) ? "Catch" : "Reel in";
@@ -348,7 +348,7 @@ std::string GameSession::interact(uint64_t guid, const float pos[3], uint32_t no
         return "";
     }
     if (t->type == ObjType::GameObject && useVerb(*t)) {
-        const bool bobber = t->field(UF::GAMEOBJECT_TYPE_ID) == 17;   // cast 20 yd out: used from where we stand
+        const bool bobber = t->goType() == 17;   // cast 20 yd out: used from where we stand
         if (d > (bobber ? (float)kFishingRange : kInteractRange)) return "You are too far away";
         if (bobber) {
             ++fishCaughtTries;
@@ -357,7 +357,7 @@ std::string GameSession::interact(uint64_t guid, const float pos[3], uint32_t no
             return "";
         }
         if (lootWindow.open) closeLoot(nowMs);
-        if (t->field(UF::GAMEOBJECT_TYPE_ID) == kGoMailbox) { openMailbox(guid, nowMs); return ""; }   // the client opens it
+        if (t->goType() == kGoMailbox) { openMailbox(guid, nowMs); return ""; }   // the client opens it
         ObjectAction act = objectAction(*t);
         if (act.spell) {   // herbs, ore, locked chests: the OPEN_LOCK spell at the object (TARGET_FLAG_GAMEOBJECT)
             Writer w;
@@ -370,7 +370,7 @@ std::string GameSession::interact(uint64_t guid, const float pos[3], uint32_t no
         if (!act.why.empty()) return act.why;
         // 6.75: a quest object flagged for us (Marla's Grave, quest 6395) with the quest's item in the bags: the click is the item's use on it,
         // as in the original (the server gives no credit for a plain use of such an object)
-        if (t->field(UF::GAMEOBJECT_TYPE_ID) == kGoGoober && (t->field(UF::GAMEOBJECT_DYN_FLAGS) & kGoActivate)) {
+        if (t->goType() == kGoGoober && (t->field(UF::GAMEOBJECT_DYN_FLAGS) & kGoActivate)) {
             for (const InvItem& it : inventory()) {
                 const ItemInfo* info = itemInfoIfKnown(it.entry);
                 if (!info || info->cls != 12 || !itemTargetSpell(it.entry)) continue;

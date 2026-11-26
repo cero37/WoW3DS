@@ -296,10 +296,11 @@ GameSession::Power GameSession::selfPower() const {
     Power p{0, 0, 0};
     if (!me) return p;
     p.type = (uint8_t)((me->field(UF::UNIT_BYTES_0) >> 24) & 0xFF);
-    if (p.type > 3) p.type = 0;
+    if (p.type > 6) p.type = 0;
     p.cur = me->field(UF::UNIT_POWER1 + p.type);
     p.max = me->field(UF::UNIT_MAXPOWER1 + p.type);
     if (p.type == 1) { p.cur /= 10; p.max /= 10; }   // rage is stored x10
+    if (p.type == 5) p.max = 0;   // runes are displayed separately, not as a power bar
     return p;
 }
 
@@ -482,19 +483,17 @@ std::vector<AuraView> GameSession::auras(const WorldObject& o, uint32_t nowMs) c
     std::vector<AuraView> out;
     if (!o.isUnitLike()) return out;
     const bool mine = o.guid == self_ || o.self;
-    for (int slot = 0; slot < kAuraSlots; ++slot) {
-        uint32_t spell = o.field((uint16_t)(UF::UNIT_FIELD_AURA + slot));
-        if (!spell) continue;
+    for (const AuraState& aura : o.auras) {
         AuraView a;
-        a.slot = (uint8_t)slot;
-        a.spell = spell;
-        a.debuff = slot >= kBuffSlots;
-        uint32_t fl = (o.field((uint16_t)(UF::UNIT_FIELD_AURAFLAGS + (slot >> 3))) >> ((slot & 7) * 4)) & 0xF;
-        a.cancelable = (fl & 1) != 0 && !a.debuff;
-        a.stacks = (uint8_t)(((o.field((uint16_t)(UF::UNIT_FIELD_AURAAPPLICATIONS + slot / 4)) >> ((slot % 4) * 8)) & 0xFF) + 1);
-        // the duration packet can come before the field update that puts the aura in the slot (spell 0 then)
-        const AuraTime& t = auraTime_[slot];
-        if (mine && (t.spell == spell || t.spell == 0) && t.endMs > nowMs) a.leftMs = t.endMs - nowMs;
+        a.slot = aura.slot;
+        a.spell = aura.spell;
+        a.debuff = (aura.flags & 0x80u) != 0;
+        a.cancelable = mine && (aura.flags & 0x10u) != 0 && aura.caster == self_;
+        a.stacks = aura.stacks ? aura.stacks : 1;
+        if ((aura.flags & 0x20u) && aura.duration) {
+            const uint32_t elapsed = nowMs - aura.updatedMs;
+            if (elapsed < aura.duration) a.leftMs = aura.duration - elapsed;
+        }
         out.push_back(a);
     }
     return out;
@@ -775,9 +774,16 @@ bool GameSession::handleSpells(uint16_t op, const Bytes& data, uint32_t nowMs) {
             uint8_t slot = r.u8();
             uint32_t ms = r.u32();
             if (r.bad || slot >= kAuraSlots) return true;
-            const WorldObject* me = selfObject();
-            auraTime_[slot].spell = me ? me->field((uint16_t)(UF::UNIT_FIELD_AURA + slot)) : 0;
-            auraTime_[slot].endMs = nowMs + std::min<uint32_t>(ms, 24u * 3600u * 1000u);
+            WorldObject* me = objects.find(self_);
+            if (me) {
+                for (AuraState& aura : me->auras) {
+                    if (aura.slot == slot) {
+                        aura.duration = ms;
+                        aura.updatedMs = nowMs;
+                        break;
+                    }
+                }
+            }
             return true;
         }
         case SMSG_CLEAR_COOLDOWN: {

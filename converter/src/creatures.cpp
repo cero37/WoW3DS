@@ -170,28 +170,6 @@ Region underwearRegion(const std::string& path, int column) {
     return column == 0 ? kPelvis : kTorso;
 }
 
-const char* raceFolder(uint32_t race) {
-    static const char* k[] = {"", "Human", "Orc", "Dwarf", "NightElf", "Scourge", "Tauren", "Gnome", "Troll", "Goblin", "BloodElf"};
-    return race >= 1 && race <= 10 ? k[race] : "";
-}
-// 6.95: the Turtle WoW races (9 Goblin, 10 High Elf): the folder of the model; a High Elf wears the Blood Elf model or, if the
-// client has a folder of its own, "HighElf". The first folder whose model exists is used.
-const char* const* raceFolderAlternatives(uint32_t race) {
-    static const char* const g[] = {"Goblin", nullptr}, * const h[] = {"BloodElf", "HighElf", nullptr};
-    static const char* const none[] = {nullptr};
-    static const char* const* single[9];
-    static const char* one[9][2];
-    if (race == 9) return g;
-    if (race == 10) return h;
-    if (race >= 1 && race <= 8) {
-        one[race][0] = raceFolder(race);
-        one[race][1] = nullptr;
-        single[race] = one[race];
-        return single[race];
-    }
-    return none;
-}
-
 }  // namespace
 
 // One CHRS entry per playable race/sex: CharSections rows -> CIMG layers (RGBA4 at half the
@@ -234,8 +212,20 @@ static void stripMagentaKey(Image& im) {
 
 template <class ModelFor>
 static void convertCharactersImpl(const Options& o, const DataDir& data, PackWriter& pack, ConvStats& st,
-                                  const Dbc* sections, const Dbc* hair, const Dbc* facial, const Dbc& cdi,
+                                  const Dbc* races, const Dbc* sections, const Dbc* hair, const Dbc* facial, const Dbc& cdi,
                                   const std::map<uint32_t, std::string>& modelPath, ModelFor& modelFor) {
+    if (!races || races->fields <= dbc335a::chrRaces::RequiredExpansion) {
+        std::fprintf(stderr, "players: ChrRaces.dbc is missing or not the WotLK 3.3.5a layout\n");
+        return;
+    }
+    std::vector<std::pair<uint32_t, std::string>> playableRaces;
+    for (uint32_t r = 0; r < races->records; ++r) {
+        const uint32_t id = races->u32(r, 0), flags = races->u32(r, dbc335a::chrRaces::Flags);
+        const uint32_t expansion = races->u32(r, dbc335a::chrRaces::RequiredExpansion);
+        std::string prefix = races->str(r, dbc335a::chrRaces::ClientPrefix);
+        if (id && !prefix.empty() && !(flags & dbc335a::chrRaces::NotPlayable) && expansion <= 2)
+            playableRaces.emplace_back(id, std::move(prefix));
+    }
     const int A = W3D_CHAR_ATLAS;
     // CIMG id: the layer's path hash mixed with its region, so one file in two places stays two entries.
     auto addLayer = [&](const std::string& path, const Region& rg) -> uint32_t {
@@ -274,24 +264,17 @@ static void convertCharactersImpl(const Options& o, const DataDir& data, PackWri
         ++st.charImages;
         return id;
     };
-    for (uint32_t race = 1; race <= 10; ++race)
+    for (const auto& [race, folder] : playableRaces)
         for (uint32_t sex = 0; sex <= 1; ++sex) {
-            const char* folder = raceFolder(race);
             const char* sx = sex ? "Female" : "Male";
-            progress(true, "players: race %u %s (%u/20), %zu layers so far", race, sx, (race - 1) * 2 + sex + 1, st.charImages);
-            std::string m2;
-            const ModelInfo* miP = nullptr;
-            for (const char* const* f = raceFolderAlternatives(race); *f; ++f) {
-                std::string cand = std::string("Character\\") + *f + "\\" + sx + "\\" + *f + sx + ".m2";
-                const ModelInfo& tried = modelFor(cand);
-                if (tried.ok) { folder = *f; m2 = cand; miP = &tried; break; }
-            }
-            if (!miP) {   // races 9 / 10 exist only in a Turtle WoW client: their absence is not a failure of a vanilla one
-                if (race <= 8) ++st.charRacesFailed;
-                else if (o.verbose) std::printf("  player race %u %s: no model in this client (not a Turtle WoW client?)\n", race, sx);
+            progress(true, "players: race %u %s, %zu layers so far", race, sx, st.charImages);
+            const std::string m2 = "Character\\" + folder + "\\" + sx + "\\" + folder + sx + ".m2";
+            const ModelInfo& mi = modelFor(m2);
+            if (!mi.ok) {
+                ++st.charRacesFailed;
+                if (o.verbose) std::printf("  player race %u %s: model not found for ChrRaces prefix %s\n", race, sx, folder.c_str());
                 continue;
             }
-            const ModelInfo& mi = *miP;
             W3dCharHeader hdr{};
             hdr.race = race;
             hdr.sex = sex;
@@ -300,10 +283,13 @@ static void convertCharactersImpl(const Options& o, const DataDir& data, PackWri
             // Scale of the race's own display: a CreatureDisplayInfo row on this model without extra info.
             std::string want = DataDir::normalize(m2);
             for (uint32_t r = 0; r < cdi.records; ++r) {
-                auto mp = modelPath.find(cdi.u32(r, 1));
-                if (mp == modelPath.end() || cdi.u32(r, 3) != 0) continue;
+                auto mp = modelPath.find(cdi.u32(r, dbc335a::creatureDisplayInfo::ModelID));
+                if (mp == modelPath.end() || cdi.u32(r, dbc335a::creatureDisplayInfo::ExtendedDisplayInfoID) != 0) continue;
                 if (DataDir::normalize(wowee::pipeline::modelPathToM2(mp->second)) != want) continue;
-                if (cdi.f32(r, 4) > 0) { hdr.scale = cdi.f32(r, 4); break; }
+                if (cdi.f32(r, dbc335a::creatureDisplayInfo::Scale) > 0) {
+                    hdr.scale = cdi.f32(r, dbc335a::creatureDisplayInfo::Scale);
+                    break;
+                }
             }
             std::vector<W3dCharSection> secs;
             if (sections)
@@ -369,7 +355,7 @@ static void convertCharactersImpl(const Options& o, const DataDir& data, PackWri
             ++st.charRaces;
             st.charSections += secs.size();
             if (o.verbose)
-                std::printf("  player %s %s: %zu sections, %zu styles, scale %.2f\n", folder, sx, secs.size(), styles.size(),
+                std::printf("  player %s %s: %zu sections, %zu styles, scale %.2f\n", folder.c_str(), sx, secs.size(), styles.size(),
                             hdr.scale);
         }
 }
@@ -381,9 +367,9 @@ static void convertCharactersDone(ConvStats& st) {
 
 template <class F>
 static void convertCharacters(const Options& o, const DataDir& data, PackWriter& pack, ConvStats& st,
-                              const Dbc* sections, const Dbc* hair, const Dbc* facial, const Dbc& cdi,
+                              const Dbc* races, const Dbc* sections, const Dbc* hair, const Dbc* facial, const Dbc& cdi,
                               const std::map<uint32_t, std::string>& modelPath, F& modelFor) {
-    convertCharactersImpl(o, data, pack, st, sections, hair, facial, cdi, modelPath, modelFor);
+    convertCharactersImpl(o, data, pack, st, races, sections, hair, facial, cdi, modelPath, modelFor);
     convertCharactersDone<F>(st);
 }
 
@@ -529,7 +515,7 @@ static void convertTransports(const Options& o, const DataDir& data, PackWriter&
 }
 
 bool convertCreatures(const Options& o, const DataDir& data, PackWriter& pack, ConvStats& st) {
-    Dbc cdi, cmd, cdie, hair, facial, sections;
+    Dbc cdi, cmd, cdie, hair, facial, sections, races;
     if (!cdi.load(data, "CreatureDisplayInfo.dbc") || !cmd.load(data, "CreatureModelData.dbc")) {
         std::fprintf(stderr, "creatures: CreatureDisplayInfo.dbc / CreatureModelData.dbc not found\n");
         return false;
@@ -538,9 +524,12 @@ bool convertCreatures(const Options& o, const DataDir& data, PackWriter& pack, C
     bool haveHair = hair.load(data, "CharHairGeosets.dbc");
     bool haveFacial = facial.load(data, "CharacterFacialHairStyles.dbc");
     bool haveSections = sections.load(data, "CharSections.dbc");
-    Dbc items;   // ItemDisplayInfo (vanilla): ID 0, GeosetGroup1..3 at 6..8 (WoWee classic dbc_layouts)
-    bool haveItems = items.load(data, "ItemDisplayInfo.dbc") && items.fields > 8;
-    const uint32_t itemGG1 = 6;
+    const bool haveRaces = !o.players || (races.load(data, "ChrRaces.dbc") &&
+                                          races.fields > dbc335a::chrRaces::RequiredExpansion);
+    Dbc items;   // ItemDisplayInfo.dbc: WotLK GeosetGroup1..3 are columns 7..9.
+    bool haveItems = items.load(data, "ItemDisplayInfo.dbc") &&
+                     items.fields > dbc335a::itemDisplayInfo::GeosetGroup + 2;
+    const uint32_t itemGG1 = dbc335a::itemDisplayInfo::GeosetGroup;
     std::map<uint32_t, uint32_t> itemRow;
     if (haveItems) for (uint32_t r = 0; r < items.records; ++r) itemRow[items.u32(r, 0)] = r;
 
@@ -651,15 +640,17 @@ bool convertCreatures(const Options& o, const DataDir& data, PackWriter& pack, C
                  st.creatureModelsFailed);
         uint32_t displayId = cdi.u32(r, 0);
         if (!only.empty() && !only.count(displayId)) continue;
-        auto mp = modelPath.find(cdi.u32(r, 1));
+        auto mp = modelPath.find(cdi.u32(r, dbc335a::creatureDisplayInfo::ModelID));
         if (mp == modelPath.end() || mp->second.empty()) { ++st.displaysFailed; continue; }
         const ModelInfo& mi = modelFor(mp->second);
         if (!mi.ok) { ++st.displaysFailed; continue; }
         W3dDisplay d{};
         d.modelId = mi.id;
-        d.scale = cdi.f32(r, 4) > 0 ? cdi.f32(r, 4) : 1.0f;
+        d.scale = cdi.f32(r, dbc335a::creatureDisplayInfo::Scale) > 0
+                      ? cdi.f32(r, dbc335a::creatureDisplayInfo::Scale)
+                      : 1.0f;
         d.modelScaleMilli = 1000;
-        if (auto ms = modelScale.find(cdi.u32(r, 1)); ms != modelScale.end()) {
+        if (auto ms = modelScale.find(cdi.u32(r, dbc335a::creatureDisplayInfo::ModelID)); ms != modelScale.end()) {
             d.scale *= ms->second;
             d.modelScaleMilli = (uint16_t)std::clamp((int)std::lround(ms->second * 1000.0f), 1, 65535);
             ++st.displaysModelScaled;
@@ -676,8 +667,8 @@ bool convertCreatures(const Options& o, const DataDir& data, PackWriter& pack, C
             if (!skin.empty()) d.tex[k] = tex(dir + skin + ".blp", W3D_CTEX_SKIN1 + k);
         }
         // Humanoid NPC: baked body texture, hair texture, geosets.
-        auto ex = extraRow.find(cdi.u32(r, 3));
-        if (cdi.u32(r, 3) && ex != extraRow.end()) {
+        auto ex = extraRow.find(cdi.u32(r, dbc335a::creatureDisplayInfo::ExtendedDisplayInfoID));
+        if (cdi.u32(r, dbc335a::creatureDisplayInfo::ExtendedDisplayInfoID) && ex != extraRow.end()) {
             uint32_t er = ex->second;
             uint32_t race = cdie.u32(er, 1), sex = cdie.u32(er, 2), style = cdie.u32(er, 5), color = cdie.u32(er, 6),
                      beard = cdie.u32(er, 7);
@@ -730,7 +721,7 @@ bool convertCreatures(const Options& o, const DataDir& data, PackWriter& pack, C
         progressDone("creatures: %zu displays, %zu models (%zu failed)", st.displaysOk, st.creatureModelsOk,
                      st.creatureModelsFailed);
     if (o.players) {
-        convertCharacters(o, data, pack, st, haveSections ? &sections : nullptr, haveHair ? &hair : nullptr,
+        convertCharacters(o, data, pack, st, haveRaces ? &races : nullptr, haveSections ? &sections : nullptr, haveHair ? &hair : nullptr,
                           haveFacial ? &facial : nullptr, cdi, modelPath, modelFor);
         if (!o.noItems) convertItems(o, data, pack, st);   // stage 5.19: armour, helmets, shoulders, weapons for players
     }

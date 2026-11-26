@@ -41,13 +41,17 @@ const char* MoveOp::name(uint16_t op) {
 
 void writeMovementInfo(Writer& w, const MovementInfo& m) {
     w.u32(m.flags);
+    w.u16(m.extraFlags);
     w.u32(m.time);
     w.f32(m.x); w.f32(m.y); w.f32(m.z); w.f32(m.o);
     if (m.flags & MoveFlag::OnTransport) {
-        w.u64(m.transportGuid);   // MovementInfo::Read on Vanilla reads ObjectGuid, not PackedGuidReader
+        w.packedGuid(m.transportGuid);
         w.f32(m.tx); w.f32(m.ty); w.f32(m.tz); w.f32(m.to);
+        w.u32(m.transportTime);
+        w.u8((uint8_t)m.transportSeat);
+        if (m.extraFlags & MoveExtraFlag::InterpolatedMovement) w.u32(m.transportTime2);
     }
-    if (m.flags & MoveFlag::Swimming) w.f32(m.pitch);
+    if ((m.flags & (MoveFlag::Swimming | MoveFlag::Flying)) || (m.extraFlags & MoveExtraFlag::AlwaysAllowPitching)) w.f32(m.pitch);
     w.u32(m.fallTime);
     if (m.flags & MoveFlag::Jumping) {
         w.f32(m.jumpZSpeed); w.f32(m.jumpSin); w.f32(m.jumpCos); w.f32(m.jumpXYSpeed);
@@ -55,16 +59,19 @@ void writeMovementInfo(Writer& w, const MovementInfo& m) {
     if (m.flags & MoveFlag::SplineElevation) w.f32(m.splineElevation);
 }
 
-bool readMovementInfo(Reader& r, MovementInfo& m, bool turtleTransport) {
+bool readMovementInfo(Reader& r, MovementInfo& m) {
     m.flags = r.u32();
+    m.extraFlags = r.u16();
     m.time = r.u32();
     m.x = r.f32(); m.y = r.f32(); m.z = r.f32(); m.o = r.f32();
     if (m.flags & MoveFlag::OnTransport) {
-        m.transportGuid = turtleTransport ? r.packedGuid() : r.u64();
+        m.transportGuid = r.packedGuid();
         m.tx = r.f32(); m.ty = r.f32(); m.tz = r.f32(); m.to = r.f32();
-        if (turtleTransport) r.u32();
+        m.transportTime = r.u32();
+        m.transportSeat = (int8_t)r.u8();
+        if (m.extraFlags & MoveExtraFlag::InterpolatedMovement) m.transportTime2 = r.u32();
     }
-    if (m.flags & MoveFlag::Swimming) m.pitch = r.f32();
+    if ((m.flags & (MoveFlag::Swimming | MoveFlag::Flying)) || (m.extraFlags & MoveExtraFlag::AlwaysAllowPitching)) m.pitch = r.f32();
     m.fallTime = r.u32();
     if (m.flags & MoveFlag::Jumping) {
         m.jumpZSpeed = r.f32(); m.jumpSin = r.f32(); m.jumpCos = r.f32(); m.jumpXYSpeed = r.f32();
@@ -75,6 +82,7 @@ bool readMovementInfo(Reader& r, MovementInfo& m, bool turtleTransport) {
 
 float MoveSpeeds::forFlags(uint32_t f) const {
     if (!(f & MoveFlag::MaskMoving) || (f & MoveFlag::Root)) return 0;
+    if (f & MoveFlag::Flying) return (f & MoveFlag::Backward) ? flightBack : flight;
     // As the server picks it (vMaNGOS MovementAnticheat::GetMoveTypeForMovementInfo): swimming ignores walk mode,
     // on land walk mode wins over backpedalling (walking backwards is walk speed, not run-back speed).
     if (f & MoveFlag::Swimming) return (f & MoveFlag::Backward) ? swimBack : swim;
@@ -100,12 +108,14 @@ void Mover::reset(float x, float y, float z, float o, uint32_t nowMs) {
 MovementInfo Mover::snapshot(uint32_t nowMs) const {
     MovementInfo s = m_;
     s.time = nowMs;
+    if (s.flags & MoveFlag::OnTransport) s.transportTime = nowMs;
     if (s.flags & MoveFlag::Jumping) s.fallTime = nowMs - jumpStartMs_;
     return s;
 }
 
 void Mover::emit(uint16_t op, uint32_t nowMs) {
     Writer w;
+    w.packedGuid(guid_);
     writeMovementInfo(w, snapshot(nowMs));
     out_.push_back({op, std::move(w.b)});
     lastSendMs_ = nowMs;
@@ -224,6 +234,7 @@ void Mover::land(float z, uint32_t nowMs) {
     Writer w;
     MovementInfo s = m_;
     s.time = nowMs;
+    w.packedGuid(guid_);
     writeMovementInfo(w, s);
     out_.push_back({MoveOp::FallLand, std::move(w.b)});
     lastSendMs_ = nowMs;
@@ -242,6 +253,7 @@ void Mover::startSwim(uint32_t nowMs) {
     s.pitch = 0;
     s.jumpZSpeed = s.jumpSin = s.jumpCos = s.jumpXYSpeed = 0;
     Writer w;
+    w.packedGuid(guid_);
     writeMovementInfo(w, s);
     out_.push_back({MoveOp::StartSwim, std::move(w.b)});
     m_.flags = s.flags;

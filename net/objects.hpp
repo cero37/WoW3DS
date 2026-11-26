@@ -1,9 +1,8 @@
-// objects.hpp — vanilla 1.12.1 world object table: SMSG_(COMPRESSED_)UPDATE_OBJECT,
+// objects.hpp — WotLK 3.3.5a world object table: SMSG_(COMPRESSED_)UPDATE_OBJECT,
 // SMSG_DESTROY_OBJECT, SMSG_MONSTER_MOVE / SMSG_COMPRESSED_MOVES, relayed
 // MSG_MOVE_* of other players, and name/creature/gameobject query answers.
 //
-// Layouts follow WoWee (ClassicPacketParsers / TbcPacketParsers::parseUpdateObject,
-// parseClassicMoveUpdateSpline) and vMaNGOS PacketBuilder::WriteMonsterMove.
+// Layouts follow TrinityCore/AzerothCore 3.3.5a update and movement packet writers.
 // Positions are server coordinates (== render coordinates in wow3ds).
 #pragma once
 #include <cstdint>
@@ -21,43 +20,43 @@ enum class ObjType : uint8_t { Object = 0, Item = 1, Container = 2, Unit = 3, Pl
                                DynamicObject = 6, Corpse = 7 };
 const char* objTypeName(ObjType t);
 
-// Update field indices for 1.12.1 (WoWee Data/expansions/classic/update_fields.json).
+struct AuraState {
+    uint8_t slot = 0, flags = 0, level = 0, stacks = 0;
+    uint32_t spell = 0, maxDuration = 0, duration = 0;
+    uint32_t updatedMs = 0;
+    uint64_t caster = 0;
+};
+
+// Update field indices for 3.3.5a (TrinityCore UpdateFields.h, build 12340).
 namespace UF {
 enum : uint16_t {
     OBJECT_GUID = 0, OBJECT_TYPE = 2, OBJECT_ENTRY = 3, OBJECT_SCALE_X = 4,
-    UNIT_TARGET = 16, UNIT_HEALTH = 22, UNIT_POWER1 = 23, UNIT_MAXHEALTH = 28, UNIT_MAXPOWER1 = 29,
-    UNIT_LEVEL = 34, UNIT_FACTIONTEMPLATE = 35, UNIT_BYTES_0 = 36, UNIT_VIRTUAL_ITEM_SLOT_DISPLAY = 37, UNIT_VIRTUAL_ITEM_INFO = 40, UNIT_FLAGS = 46,
-    UNIT_FIELD_AURA = 47, UNIT_FIELD_AURAFLAGS = 95, UNIT_FIELD_AURALEVELS = 101, UNIT_FIELD_AURAAPPLICATIONS = 113,
-    UNIT_BOUNDINGRADIUS = 129, UNIT_COMBATREACH = 130, UNIT_DISPLAYID = 131, UNIT_NATIVEDISPLAYID = 132,
-    UNIT_FIELD_CHANNEL_OBJECT = 20,
-    UNIT_FIELD_SUMMON = 8, UNIT_FIELD_PETNUMBER = 139,   // UI stage 13: our pet's guid (2 fields), the pet's number
-    UNIT_MOUNTDISPLAYID = 133, UNIT_BYTES_1 = 138, UNIT_DYNAMIC_FLAGS = 143, UNIT_CHANNEL_SPELL = 144, UNIT_NPC_FLAGS = 147,
-    UNIT_NPC_EMOTESTATE = 148,
-    UNIT_END = 188,
-    // PLAYER_BYTES/_2 are 193/194 (vMaNGOS UpdateFields_1_12_1.h: GUILDID 191 and GUILDRANK 192 come first;
-    // WoWee's classic update_fields.json has 191/192, which reads the guild fields as the look - confirmed on
-    // the real Stone Tavern log: 193 = 0x03080601 skin 1 face 6 hair 8 colour 3, 194 = facial hair 2).
-    PLAYER_FLAGS = 190, PLAYER_BYTES = 193, PLAYER_BYTES_2 = 194,
-    PLAYER_VISIBLE_ITEM_1_0 = 260, PLAYER_VISIBLE_ITEM_STRIDE = 12,   // entry of equipment slot k: 260 + 12 k
-    PLAYER_FIELD_INV_SLOT_HEAD = 486,   // 23 equipped + 4 bags + 16 backpack slots, u64 GUID each (2 fields)
-    PLAYER_XP = 716, PLAYER_NEXT_LEVEL_XP = 717, PLAYER_REST_STATE_EXPERIENCE = 1175, PLAYER_FIELD_COINAGE = 1176,
-    PLAYER_SKILL_INFO_1_1 = 718,   // 128 slots x 3 fields: [id | step << 16] [value | max << 16] [temporary bonus | permanent bonus << 16] (int16 each)
-    PLAYER_CHARACTER_POINTS1 = 1102,
-    PLAYER_END = 1282,
+    UNIT_FIELD_SUMMON = 8, UNIT_TARGET = 18, UNIT_FIELD_CHANNEL_OBJECT = 20, UNIT_CHANNEL_SPELL = 22,
+    UNIT_BYTES_0 = 23, UNIT_HEALTH = 24, UNIT_POWER1 = 25, UNIT_MAXHEALTH = 32, UNIT_MAXPOWER1 = 33,
+    UNIT_LEVEL = 54, UNIT_FACTIONTEMPLATE = 55, UNIT_VIRTUAL_ITEM_SLOT_DISPLAY = 56, UNIT_FLAGS = 59,
+    UNIT_BOUNDINGRADIUS = 65, UNIT_COMBATREACH = 66, UNIT_DISPLAYID = 67, UNIT_NATIVEDISPLAYID = 68,
+    UNIT_MOUNTDISPLAYID = 69, UNIT_BYTES_1 = 74, UNIT_FIELD_PETNUMBER = 75, UNIT_DYNAMIC_FLAGS = 79,
+    UNIT_NPC_FLAGS = 82, UNIT_NPC_EMOTESTATE = 83, UNIT_END = 148,
+    PLAYER_FLAGS = 150, PLAYER_BYTES = 153, PLAYER_BYTES_2 = 154,
+    PLAYER_VISIBLE_ITEM_1_0 = 283, PLAYER_VISIBLE_ITEM_STRIDE = 2,
+    PLAYER_FIELD_INV_SLOT_HEAD = 324,
+    PLAYER_XP = 634, PLAYER_NEXT_LEVEL_XP = 635, PLAYER_SKILL_INFO_1_1 = 636,
+    PLAYER_CHARACTER_POINTS1 = 1020, PLAYER_REST_STATE_EXPERIENCE = 1169, PLAYER_FIELD_COINAGE = 1170,
+    PLAYER_FIELD_GLYPH_SLOTS = 1312, PLAYER_FIELD_GLYPHS = 1318, PLAYER_GLYPHS_ENABLED = 1324,
+    PLAYER_END = 1326,
+    // WotLK no longer stores aura slots in update fields; aura state comes from aura packets.
+    UNIT_FIELD_AURA = 0xFFFF, UNIT_FIELD_AURAFLAGS = 0xFFFF,
+    UNIT_FIELD_AURALEVELS = 0xFFFF, UNIT_FIELD_AURAAPPLICATIONS = 0xFFFF,
     // items and bags
-    ITEM_FIELD_OWNER = 6, ITEM_FIELD_CONTAINED = 8, ITEM_FIELD_STACK_COUNT = 14, ITEM_FIELD_DURABILITY = 46,
-    ITEM_FIELD_MAXDURABILITY = 47, CONTAINER_FIELD_NUM_SLOTS = 48, CONTAINER_FIELD_SLOT_1 = 50,
-    // 7.16: seven enchantments, 3 fields each: id, time left (ms), charges (vMaNGOS UpdateFields_1_12_1.h: 6 + 0x10)
-    ITEM_FIELD_ENCHANTMENT = 22, ITEM_FIELD_ENCHANTMENT_STRIDE = 3, ITEM_FIELD_ENCHANTMENT_COUNT = 7,
-    // corpses (vMaNGOS UpdateFields_1_12_1.h: OWNER 6-7, FACING 8, POS_X/Y/Z 9-11, DISPLAY_ID 12, ITEM 13..31 (display id | inventory type << 24),
-    // BYTES_1 32 (race, gender, skin, face), BYTES_2 33 (hair style, hair colour, facial hair), GUILD 34, FLAGS 35, DYNAMIC_FLAGS 36)
-    CORPSE_FIELD_OWNER = 6, CORPSE_FIELD_FACING = 8, CORPSE_FIELD_POS_X = 9, CORPSE_FIELD_DISPLAY_ID = 12, CORPSE_FIELD_ITEM = 13,
-    CORPSE_FIELD_BYTES_1 = 32, CORPSE_FIELD_BYTES_2 = 33, CORPSE_FIELD_GUILD = 34, CORPSE_FIELD_FLAGS = 35, CORPSE_FIELD_DYNAMIC_FLAGS = 36,
-    // dynamic objects (areas of ground spells): CASTER 6-7, BYTES 8, SPELLID 9, RADIUS 10 (float), POS_X/Y/Z 11-13, FACING 14
-    DYNAMICOBJECT_CASTER = 6, DYNAMICOBJECT_BYTES = 8, DYNAMICOBJECT_SPELLID = 9, DYNAMICOBJECT_RADIUS = 10, DYNAMICOBJECT_POS_X = 11,
-    DYNAMICOBJECT_FACING = 14,
-    GAMEOBJECT_CREATED_BY = 6, GAMEOBJECT_DISPLAYID = 8, GAMEOBJECT_FLAGS = 9, GAMEOBJECT_ROTATION = 10, GAMEOBJECT_STATE = 14,
-    GAMEOBJECT_DYN_FLAGS = 19, GAMEOBJECT_TYPE_ID = 21,
+    ITEM_FIELD_OWNER = 6, ITEM_FIELD_CONTAINED = 8, ITEM_FIELD_STACK_COUNT = 14, ITEM_FIELD_ENCHANTMENT = 22,
+    ITEM_FIELD_ENCHANTMENT_STRIDE = 3, ITEM_FIELD_ENCHANTMENT_COUNT = 12, ITEM_FIELD_DURABILITY = 60,
+    ITEM_FIELD_MAXDURABILITY = 61, CONTAINER_FIELD_NUM_SLOTS = 64, CONTAINER_FIELD_SLOT_1 = 66,
+    CORPSE_FIELD_OWNER = 6, CORPSE_FIELD_DISPLAY_ID = 10, CORPSE_FIELD_ITEM = 11, CORPSE_FIELD_BYTES_1 = 30,
+    CORPSE_FIELD_BYTES_2 = 31, CORPSE_FIELD_GUILD = 32, CORPSE_FIELD_FLAGS = 33, CORPSE_FIELD_DYNAMIC_FLAGS = 34,
+    DYNAMICOBJECT_CASTER = 6, DYNAMICOBJECT_BYTES = 8, DYNAMICOBJECT_SPELLID = 9, DYNAMICOBJECT_RADIUS = 10,
+    GAMEOBJECT_CREATED_BY = 6, GAMEOBJECT_DISPLAYID = 8, GAMEOBJECT_FLAGS = 9, GAMEOBJECT_ROTATION = 10,
+    GAMEOBJECT_DYN_FLAGS = 14, GAMEOBJECT_STATE = 17,
+    GAMEOBJECT_TYPE_ID = 18, // local cache slot; not sent in WotLK update fields
 };
 }
 
@@ -80,6 +79,8 @@ struct WorldObject {
     // Transports (stage 5.21). A GO transport: the server's path progress when its create block arrived (UPDATEFLAG_TRANSPORT).
     uint32_t transportProgress = 0;
     bool hasTransportProgress = false;
+    uint32_t gameObjectType = 0;
+    bool hasGameObjectType = false;
     // A path transport remains known after OUT_OF_RANGE (often a continent change).
     // Keep its real GUID and phase, but never use its stale position without a path pose.
     bool transportOutOfRange = false;
@@ -99,6 +100,7 @@ struct WorldObject {
     uint32_t carriedStamp = 0, carriedBaseMs = 0;   // mv.time of the last packet seen, local time it was seen
     float carriedBase[3] = {0, 0, 0}, carriedO = 0;               // offset (x, y, z) in that packet
     std::vector<uint32_t> fields;    // update fields (index -> value), grown on demand
+    std::vector<AuraState> auras;
     std::string name, subname;       // from the query caches
     uint8_t rank = 0;                // creatures (SMSG_CREATURE_QUERY_RESPONSE): 0 normal, 1 elite, 2 rare elite, 3 boss, 4 rare
     uint8_t creatureType = 0;        // 1 beast, 2 dragonkin, 3 demon, 4 elemental, 5 giant, 6 undead, 7 humanoid, 8 critter ...
@@ -144,13 +146,13 @@ struct WorldObject {
     bool swimming() const { return (mv.flags & MoveFlag::Swimming) != 0; }
 
     // ---- game objects (stage 5.41)
-    uint32_t goType() const { return field(UF::GAMEOBJECT_TYPE_ID); }
+    uint32_t goType() const { return hasGameObjectType ? gameObjectType : field(UF::GAMEOBJECT_TYPE_ID); }
     bool isPathTransport() const {
         return type == ObjType::GameObject && hasTransportProgress &&
                (goType() == 15 || (guid >> 48) == 0x1FC0u);
     }
-    // 1.12: 0 = GO_STATE_ACTIVE (a door that is open, a button pressed, a chest opened), 1 = GO_STATE_READY (closed / ready), 2 = alternative
-    uint32_t goState() const { return field(UF::GAMEOBJECT_STATE); }
+    // GAMEOBJECT_BYTES_1 stores the WotLK gameobject state in its low byte.
+    uint32_t goState() const { return field(UF::GAMEOBJECT_STATE) & 0xFF; }
     // GAMEOBJECT_ROTATION: the quaternion (x y z w) the server places the model with. For an upright object it is only the
     // facing about Z (sin, cos of half the angle in z / w); with x or y set the object stands tilted (logs, planks, camp parts).
     // Returns false when the quaternion is missing or invalid.
@@ -180,10 +182,6 @@ struct ObjectStats {
 
 class ObjectTable {
 public:
-    // 6.58: a Turtle WoW clone's server (WoWee TurtlePacketParsers): a u32 time after the transport position in movement
-    // blocks (1.12 has none; tried first, then 1.12's), the spline also under TBC's flag 0x08000000, SMSG_MONSTER_MOVE with
-    // Animation (u8 + u32) / Parabolic (f32 + u32) parts and at times zlib-compressed.
-    bool turtle = false;
     void clear();
     void setSelf(uint64_t guid) { self_ = guid; }
     uint64_t self() const { return self_; }
@@ -232,7 +230,7 @@ public:
     bool hasGameObjectInfo(uint32_t entry) const { return goNames_.count(entry) != 0; }
     // SMSG_GAMEOBJECT_QUERY_RESPONSE: type and the 24 data values (chest / goober / quest giver: data[0] = lock id)
     struct GoInfo { uint32_t type = 0; uint32_t data[24] = {}; };
-    void setGoInfo(uint32_t entry, const GoInfo& gi) { goInfo_[entry] = gi; }
+    void setGoInfo(uint32_t entry, const GoInfo& gi);
     const GoInfo* goInfo(uint32_t entry) const { auto it = goInfo_.find(entry); return it == goInfo_.end() ? nullptr : &it->second; }
     // Best known name of any GUID (players from the name cache even when out of range); "" if unknown.
     std::string nameOf(uint64_t g) const;
@@ -254,11 +252,11 @@ public:
     uint32_t maxFieldsOther = UF::PLAYER_END;   // fields kept for objects other than self
 
 private:
-    bool parseMovementBlock(Reader& r, WorldObject& o, uint32_t nowMs, bool transportTime = false);
-    bool parseMovementOrCreate(Reader& r, WorldObject& o, uint32_t nowMs, bool withFields);   // 6.58: Turtle layout, then 1.12's
+    bool parseMovementBlock(Reader& r, WorldObject& o, uint32_t nowMs);
+    bool parseMovementOrCreate(Reader& r, WorldObject& o, uint32_t nowMs, bool withFields);
     bool parseFields(Reader& r, WorldObject* o);
     uint32_t nowMs_ = 0;
-    bool parseMonsterMove(Reader& r, uint32_t nowMs);
+    bool parseMonsterMove(Reader& r, uint32_t nowMs, bool transportPacket = false);
     void remove(uint64_t g);
     void applyNames(WorldObject& o);
     uint32_t fieldCap(const WorldObject& o) const;
@@ -287,7 +285,9 @@ enum : uint16_t {
     CMSG_GAMEOBJECT_QUERY = 0x05E, SMSG_GAMEOBJECT_QUERY_RESPONSE = 0x05F,
     CMSG_CREATURE_QUERY = 0x060, SMSG_CREATURE_QUERY_RESPONSE = 0x061,
     SMSG_UPDATE_OBJECT = 0x0A9, SMSG_DESTROY_OBJECT = 0x0AA, SMSG_MONSTER_MOVE = 0x0DD,
+    SMSG_MONSTER_MOVE_TRANSPORT = 0x2AE,
     SMSG_COMPRESSED_UPDATE_OBJECT = 0x1F6, SMSG_COMPRESSED_MOVES = 0x2FB,
+    SMSG_AURA_UPDATE_ALL = 0x495, SMSG_AURA_UPDATE = 0x496,
 };
 }
 

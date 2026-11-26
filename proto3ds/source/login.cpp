@@ -58,8 +58,6 @@ void LoginFlow::init() {
             std::string k = s.substr(0, eq), v = s.substr(eq + 1);
             if (k == "server") server_ = v;
             else if (k == "account") account_ = v;
-            else if (k == "protocol") protocol_ = atoi(v.c_str()) == 8 ? 8 : 3;
-            else if (k == "client") turtle_ = v == "turtle";   // 6.58
             else if (k == "log") logOn_ = atoi(v.c_str()) != 0;
             else if (k == "realm") lastRealm_ = v;
             else if (k == "character") lastChar_ = v;
@@ -88,8 +86,8 @@ void LoginFlow::saveConfig() {
     FILE* f = fopen(kCfgPath, "w");
     if (!f) return;
     // The password is never stored.
-    fprintf(f, "server=%s\naccount=%s\nprotocol=%d\nclient=%s\nlog=%d\nrealm=%s\ncharacter=%s\n", server_.c_str(), account_.c_str(),
-            protocol_, turtle_ ? "turtle" : "vanilla", logOn_ ? 1 : 0, lastRealm_.c_str(), lastChar_.c_str());
+    fprintf(f, "server=%s\naccount=%s\nlog=%d\nrealm=%s\ncharacter=%s\n", server_.c_str(), account_.c_str(),
+            logOn_ ? 1 : 0, lastRealm_.c_str(), lastChar_.c_str());
     fclose(f);
 }
 
@@ -156,13 +154,6 @@ void LoginFlow::act(GlueAction a) {
             break;
         case GlueAction::Quit:
             quit_ = true;
-            break;
-        case GlueAction::ToggleProtocol:
-            // 6.58: 1.12 protocol 3 -> 1.12 protocol 8 -> Turtle 1.18 (Turtle WoW clones: OctoWoW ...) -> back
-            if (turtle_) { turtle_ = false; protocol_ = 3; }
-            else if (protocol_ == 3) protocol_ = 8;
-            else { turtle_ = true; protocol_ = 3; }
-            saveConfig();
             break;
         case GlueAction::ToggleLog:
             logOn_ = !logOn_;
@@ -416,13 +407,10 @@ void LoginFlow::loadDataTables() {
 void LoginFlow::network() {
     if (offline_) { networkOffline(); return; }
     using ui::tr;
-    w3n::ClientVersion ver = turtle_ ? w3n::ClientVersion::turtle() : w3n::ClientVersion();
-    ver.authProtocol = (uint8_t)protocol_;
-    // 7.18: the game language the server localizes quests, NPC names and gossip by. The converter's glue.txt carries the
-    // one it was built with; an older pack of a vanilla client falls back to the interface language (Settings > Interface
-    // > Language). A Turtle client keeps its own enUS unless glue.txt names a language.
+    w3n::ClientVersion ver;
+    // The converter's glue.txt carries the language the server localizes by; otherwise use the interface language.
     const std::string& gameLocale = texts_.gameLocale();
-    ver.locale = !gameLocale.empty() ? gameLocale : (turtle_ ? std::string("enUS") : std::string(ui::languageCode(ui::g_lang)));
+    ver.locale = !gameLocale.empty() ? gameLocale : std::string(ui::languageCode(ui::g_lang));
     if (pending_ == Pending::Auth) {   // the "Connecting..." dialog was drawn last frame
         pending_ = Pending::None;
         bool ok = auth_.start(server_, account_, password_, ver);
@@ -433,7 +421,7 @@ void LoginFlow::network() {
     } else if (pending_ == Pending::World) {
         pending_ = Pending::None;
         const w3n::Realm& r = auth_.realms()[(size_t)ui_.realm];
-        if (!world_.start(r.address, auth_.account(), auth_.sessionKey(), ver)) {
+        if (!world_.start(r.address, auth_.account(), auth_.sessionKey(), ver, r.id)) {
             message(world_.error());
             phase_ = Phase::RealmSelect;
             return;
@@ -684,9 +672,6 @@ void LoginFlow::fillModel() {
     model_.server = server_;
     model_.account = account_;
     model_.havePassword = !password_.empty();
-    model_.protocol = protocol_;
-    model_.turtle = turtle_;
-    glue::setTurtle(turtle_);
     model_.packetLog = logOn_;
     model_.wait = wait_;
     model_.waitFixed = waitFixed_;

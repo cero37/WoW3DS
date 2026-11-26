@@ -36,7 +36,7 @@ uint32_t MirrorTimer::valueAt(uint32_t nowMs) const {
 
 uint64_t GameSession::fishingBobber() const {
     for (auto& [g, o] : objects.all()) {
-        if (o.type != ObjType::GameObject || o.field(UF::GAMEOBJECT_TYPE_ID) != kGoFishingNode) continue;
+        if (o.type != ObjType::GameObject || o.goType() != kGoFishingNode) continue;
         const uint64_t by = (uint64_t)o.field(UF::GAMEOBJECT_CREATED_BY) | ((uint64_t)o.field(UF::GAMEOBJECT_CREATED_BY + 1) << 32);
         if (by == self_) return g;
     }

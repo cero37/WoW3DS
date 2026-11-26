@@ -310,7 +310,7 @@ void GameSession::updateQuests(uint32_t nowMs) {
     for (auto& [g, o] : objects.all()) {
         if (sent >= kStatusPerUpdate) break;
         const bool giver = o.type == ObjType::Unit ? (o.field(UF::UNIT_NPC_FLAGS) & kNpcQuestGiver) && !o.dead()
-                         : o.type == ObjType::GameObject && o.field(UF::GAMEOBJECT_TYPE_ID) == 2;   // quest giver objects
+                         : o.type == ObjType::GameObject && o.goType() == 2;   // quest giver objects
         if (!giver || !o.hasPos) continue;
         if (statusAskedMs_.count(g)) continue;
         float p[3];

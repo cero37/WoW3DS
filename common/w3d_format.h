@@ -22,8 +22,8 @@
     ((uint32_t)(a) | ((uint32_t)(b) << 8) | ((uint32_t)(c) << 16) | ((uint32_t)(d) << 24))
 
 #define W3DP_MAGIC    W3D_FOURCC('W', '3', 'D', 'P')
-#define W3DP_VERSION  5u   // v5: item displays (armour on players) + attachment points of creature models; v4: creature
-                           // animations of every kind + mount seats; v3: terrain LODs + skirts; v2: WATR
+#define W3DP_VERSION  6u   // v6: helmet display slots for all 11 WotLK races; v5: item displays + creature attachments;
+                           // v4: creature animations + mount seats; v3: terrain LODs + skirts; v2: WATR
 #define W3D_BLOB_ALIGN 16u
 
 enum W3dEntryType {
@@ -736,7 +736,7 @@ static inline uint32_t w3d_char_id(uint32_t race, uint32_t sex) { return race * 
 //   6 leg lower   (128, 160, 128, 64)
 //   7 foot        (128, 224, 128, 32)
 #define W3D_ITEM_REGIONS 8
-#define W3D_ITEM_HELMS 16            // helmet models per race / sex: index (race - 1) * 2 + sex, races 1..8
+#define W3D_ITEM_HELMS 22            // helmet models per race / sex: index (race - 1) * 2 + sex, races 1..11 (race 9 unused)
 
 // Equipment slots of the player (PLAYER_VISIBLE_ITEM / inventory slot numbers).
 enum W3dEquipSlot { W3D_EQ_HEAD = 0, W3D_EQ_NECK = 1, W3D_EQ_SHOULDERS = 2, W3D_EQ_SHIRT = 3, W3D_EQ_CHEST = 4,
@@ -752,8 +752,8 @@ typedef struct {
     uint32_t cape[2];             // TEX ids of the cloak texture [sex] (0 = none)
     uint32_t model[2];            // MODL ids: [0] the weapon / shield / left shoulder (the left model, else the right),
                                   // [1] the right shoulder
-    uint32_t helm[W3D_ITEM_HELMS];   // MODL ids of the helmet per race / sex (0 = no model for that body)
-} W3dItemDisplay;                 // 148 bytes
+    uint32_t helm[W3D_ITEM_HELMS]; // MODL ids of the helmet per race / sex (0 = no model for that body)
+} W3dItemDisplay;                  // 172 bytes
 
 static inline int w3d_item_valid(const uint8_t* blob, uint32_t size) { (void)blob; return size >= sizeof(W3dItemDisplay); }
 

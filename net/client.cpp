@@ -9,7 +9,7 @@ namespace w3n {
 
 namespace {
 
-// Vanilla 1.12.1 opcodes (WoWee Data/expansions/classic/opcodes.json).
+// WotLK 3.3.5a opcodes used by login and initial world entry.
 enum : uint16_t {
     CMSG_CHAR_CREATE = 0x036, CMSG_CHAR_DELETE = 0x038, SMSG_CHAR_CREATE = 0x03A, SMSG_CHAR_DELETE = 0x03C,
     CMSG_CHAR_ENUM = 0x037, SMSG_CHAR_ENUM = 0x03B, CMSG_PLAYER_LOGIN = 0x03D, SMSG_CHARACTER_LOGIN_FAILED = 0x041,
@@ -65,7 +65,7 @@ bool AuthClient::sendChallenge() {
     // CMD_AUTH_LOGON_CHALLENGE
     Writer w;
     w.u8(0x00);
-    w.u8(ver_.authProtocol);
+    w.u8(8);  // post-BC realmd protocol
     w.u16((uint16_t)(30 + account_.size()));
     w.fourcc("WoW");
     w.u8(ver_.major); w.u8(ver_.minor); w.u8(ver_.patch);
@@ -171,10 +171,10 @@ bool AuthClient::handleProof() {
     if (buf_.size() < 2) return false;
     if (buf_[0] != 0x01) { fail("unexpected reply to logon proof"); return true; }
     if (buf_[1] != 0) { fail(std::string("login refused: ") + authResultText(buf_[1])); return true; }
-    // build < 6299: cmd, error, M2[20], surveyId(u32) = 26 bytes
-    if (buf_.size() < 26) return false;
+    // Post-BC: cmd, error, M2[20], account flags, survey ID, login flags.
+    if (buf_.size() < 32) return false;
     Bytes M2(buf_.begin() + 2, buf_.begin() + 22);
-    buf_.erase(buf_.begin(), buf_.begin() + 26);
+    buf_.erase(buf_.begin(), buf_.begin() + 32);
     if (M2 != M2_) { fail("server proof mismatch (wrong server?)"); return true; }
     t_.authTotal = (double)(nowMs() - t0_);
 
@@ -197,13 +197,14 @@ bool AuthClient::handleRealms() {
     buf_.erase(buf_.begin(), buf_.begin() + 3 + (long)size);
     Reader r(body);
     r.u32();
-    // Vanilla layout: uint8 count; per realm uint32 icon, uint8 flags, name, address,
-    // float population, uint8 characters, uint8 timezone, uint8 id
-    uint8_t count = r.u8();
+    // Post-BC layout: uint16 count; type, lock, flags, name, address, population,
+    // character count, timezone, realm ID, and optional build information.
+    uint16_t count = r.u16();
     realms_.clear();
-    for (uint8_t i = 0; i < count && !r.bad; ++i) {
+    for (uint16_t i = 0; i < count && !r.bad; ++i) {
         Realm rl;
-        rl.icon = r.u32();
+        rl.icon = r.u8();
+        r.skip(1);  // locked
         rl.flags = r.u8();
         rl.name = r.cstr();
         rl.address = r.cstr();
@@ -211,9 +212,10 @@ bool AuthClient::handleRealms() {
         rl.characters = r.u8();
         rl.timezone = r.u8();
         rl.id = r.u8();
-        if (rl.flags & 0x04) r.skip(5);   // version info (build-specific realms)
+        if (rl.flags & 0x04) r.skip(5);   // version triplet and build number
         if (!r.bad) realms_.push_back(rl);
     }
+    if (r.bad) { fail("malformed WotLK realm list"); return true; }
     t_.realmList = (double)(nowMs() - tRealms_);
     sock_.close();   // realmd is done; the world server is a new connection
     state_ = realms_.empty() ? State::Failed : State::Done;
@@ -229,7 +231,7 @@ void WorldClient::fail(const std::string& e) {
 }
 
 bool WorldClient::start(const std::string& hostPort, const std::string& account, const Bytes& sessionKey,
-                        const ClientVersion& ver) {
+                        const ClientVersion& ver, uint32_t realmId) {
     sock_.close();
     state_ = State::Idle;
     err_.clear(); inBuf_.clear(); chars_.clear(); opCounts_.clear();
@@ -244,6 +246,7 @@ bool WorldClient::start(const std::string& hostPort, const std::string& account,
     createResult_ = deleteResult_ = -1;
     t_ = Timings{};
     ver_ = ver;
+    realmId_ = realmId;
     account_ = upper(account);
     K_ = sessionKey;
     std::string host;
@@ -289,8 +292,7 @@ void WorldClient::createCharacter(const CharCreateInfo& c) {
     w.cstr(c.name);
     w.u8(c.race); w.u8(c.cls); w.u8(c.gender);
     w.u8(c.skin); w.u8(c.face); w.u8(c.hairStyle); w.u8(c.hairColor); w.u8(c.facialHair); w.u8(c.outfit);
-    // 6.99: the 1.12.1 client (and Turtle WoW's) sends four more zero bytes after the outfit; servers that check the length
-    // (Turtle WoW / OctoWoW) drop a shorter packet without a word - "the server did not answer" (as WoWee's CharCreatePacket)
+    // Keep the extension bytes expected by the target client's character-create packet.
     w.u32(0);
     createResult_ = -1;
     send(CMSG_CHAR_CREATE, w.b);
@@ -432,29 +434,37 @@ void WorldClient::handle(Packet& p) {
     switch (p.opcode) {
         case SMSG_AUTH_CHALLENGE: {
             if (state_ != State::WaitChallenge) break;
-            uint32_t serverSeed = r.u32();
-            uint32_t clientSeed;
-            randomBytes((uint8_t*)&clientSeed, 4);
-            // digest = SHA1(account | 0u32 | clientSeed | serverSeed | K)
+            if (r.left() < 40) { fail("malformed WotLK auth challenge"); return; }
+            r.u32();  // DoS difficulty
+            Bytes serverChallenge = r.bytes(4);
+            r.skip(32);  // DoS challenge
+            Bytes clientChallenge(4);
+            if (!randomBytes(clientChallenge.data(), clientChallenge.size())) {
+                fail("no random source");
+                return;
+            }
+            // digest = SHA1(account | 0u32 | local challenge | server challenge | K)
             Writer hin;
             hin.raw(account_.data(), account_.size());
             hin.u32(0);
-            hin.u32(clientSeed);
-            hin.u32(serverSeed);
+            hin.raw(clientChallenge);
+            hin.raw(serverChallenge);
             hin.raw(K_);
             Bytes digest = sha1(hin.b);
-            // Addon list as the stock 1.12 client sends it (CMaNGOS fingerprints it).
-            static const char* addons[] = {"Blizzard_AuctionUI", "Blizzard_BattlefieldMinimap", "Blizzard_BindingUI",
-                                           "Blizzard_CombatText", "Blizzard_CraftUI", "Blizzard_GMSurveyUI",
-                                           "Blizzard_InspectUI", "Blizzard_MacroUI", "Blizzard_RaidUI",
-                                           "Blizzard_TalentUI", "Blizzard_TradeSkillUI", "Blizzard_TrainerUI"};
+            // Empty addon list and timestamp, as expected by TrinityCore/AzerothCore.
             Writer ad;
-            for (const char* a : addons) { ad.cstr(a); ad.u8(1); ad.u32(0x4C1C776D); ad.u32(0); }
+            ad.u32(0);
+            ad.u32(0);
             Writer w;
-            w.u32(ver_.worldBuild ? ver_.worldBuild : ver_.build);
-            w.u32(0);   // server id
+            w.u32(ver_.build);
+            w.u32(0);   // login server ID
             w.cstr(account_);
-            w.u32(clientSeed);
+            w.u32(0);   // login server type
+            w.raw(clientChallenge);
+            w.u32(0);   // region ID
+            w.u32(0);   // battlegroup ID
+            w.u32(realmId_);
+            w.u64(0);   // DoS response
             w.raw(digest);
             w.u32((uint32_t)ad.b.size());
             w.raw(zlibStored(ad.b));
@@ -491,11 +501,21 @@ void WorldClient::handle(Packet& p) {
                 c.zone = r.u32(); c.map = r.u32();
                 c.x = r.f32(); c.y = r.f32(); c.z = r.f32();
                 c.guild = r.u32(); c.flags = r.u32();
+                r.u32();  // customize flags
                 c.firstLogin = r.u8() != 0;
                 r.skip(12);   // pet display, level, family
-                for (int k = 0; k < 20; ++k) { c.equipDisplay[k] = r.u32(); c.equipInv[k] = r.u8(); }
+                for (int k = 0; k < 23; ++k) {
+                    uint32_t display = r.u32();
+                    uint8_t inventoryType = r.u8();
+                    r.u32();  // enchant visual
+                    if (k < 20) {
+                        c.equipDisplay[k] = display;
+                        c.equipInv[k] = inventoryType;
+                    }
+                }
                 if (!r.bad) chars_.push_back(c);
             }
+            if (r.bad) { fail("malformed WotLK character list"); return; }
             t_.charEnum = (double)(nowMs() - tStep_);
             state_ = State::CharSelect;
             return;
@@ -596,7 +616,7 @@ const char* authResultText(uint8_t code) {
         case 0x06: return "account already online";
         case 0x07: return "no game time";
         case 0x08: return "server busy";
-        case 0x09: return "client version not accepted (try the other Protocol setting: 1.12 / Turtle 1.18)";
+        case 0x09: return "client version not accepted";
         case 0x0A: return "client needs an update";
         case 0x0C: return "account suspended";
         case 0x0D: return "access denied";

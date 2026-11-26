@@ -14,9 +14,9 @@ namespace glue {
 
 namespace {
 constexpr uint16_t C(int id) { return (uint16_t)(1u << id); }
-// classes: 1 Warrior 2 Paladin 3 Hunter 4 Rogue 5 Priest 7 Shaman 8 Mage 9 Warlock 11 Druid
+// WotLK classes: 1 Warrior 2 Paladin 3 Hunter 4 Rogue 5 Priest 6 Death Knight 7 Shaman 8 Mage 9 Warlock 11 Druid.
 const RaceInfo kRaces[] = {
-    {1, "HUMAN", "Human", "Человек", Faction::Alliance, (uint16_t)(C(1) | C(2) | C(4) | C(5) | C(8) | C(9)), {1.85f, 1.75f},
+    {1, "HUMAN", "Human", "Человек", Faction::Alliance, (uint16_t)(C(1) | C(2) | C(4) | C(5) | C(6) | C(8) | C(9)), {1.85f, 1.75f},
      "Humans are a young, resilient race whose kingdom of Stormwind leads the Alliance. Versatile and determined, they make "
      "fine soldiers, priests and mages, and their paladins carry the Light into battle.",
      "Люди — молодая и стойкая раса; их королевство Штормград возглавляет Альянс. Разносторонние и решительные, они становятся "
@@ -25,7 +25,7 @@ const RaceInfo kRaces[] = {
      "Sword and Mace Specialization: +5 weapon skill",
      "Дипломатия: +10% к получаемой репутации\nВосприятие: лучше видите незаметных врагов\nЧеловеческий дух: +5% к духу\n"
      "Владение мечами и дробящим оружием: +5 к навыку"},
-    {3, "DWARF", "Dwarf", "Дворф", Faction::Alliance, (uint16_t)(C(1) | C(2) | C(3) | C(4) | C(5)), {1.40f, 1.35f},
+    {3, "DWARF", "Dwarf", "Дворф", Faction::Alliance, (uint16_t)(C(1) | C(2) | C(3) | C(4) | C(5) | C(6)), {1.40f, 1.35f},
      "The stout dwarves of Ironforge delve deep beneath the mountains of Dun Morogh. Hardy warriors and skilled smiths, they "
      "are fierce allies of humankind and tireless seekers of their ancient past.",
      "Крепкие дворфы Стальгорна живут в глубинах гор Дун Морога. Стойкие воины и искусные кузнецы, они верные союзники людей "
@@ -34,7 +34,7 @@ const RaceInfo kRaces[] = {
      "Frost Resistance: +10\nTreasure Finding: track treasure",
      "Каменная форма: невосприимчивость к ядам, болезням и кровотечению, +10% к броне\nВладение огнестрельным оружием: +5 к навыку\n"
      "Сопротивление магии льда: +10\nПоиск сокровищ: показывает сокровища"},
-    {4, "NIGHTELF", "Night Elf", "Ночной эльф", Faction::Alliance, (uint16_t)(C(1) | C(3) | C(4) | C(5) | C(11)), {2.15f, 2.05f},
+    {4, "NIGHTELF", "Night Elf", "Ночной эльф", Faction::Alliance, (uint16_t)(C(1) | C(3) | C(4) | C(5) | C(6) | C(11)), {2.15f, 2.05f},
      "The ancient night elves live in the forests of Teldrassil, the great world tree. Reclusive and proud, they guard nature "
      "with their druids and hunters and have joined the Alliance against the Burning Legion.",
      "Древние ночные эльфы живут в лесах Тельдрассила, великого древа мира. Замкнутые и гордые, они хранят природу вместе с "
@@ -43,7 +43,7 @@ const RaceInfo kRaces[] = {
      "Wisp Spirit: become a fast wisp when dead",
      "Слиться с тенью: невидимость, пока стоите на месте\nПроворство: +1% к уклонению\nСопротивление силам природы: +10\n"
      "Дух огонька: после смерти вы — быстрый огонёк"},
-    {7, "GNOME", "Gnome", "Гном", Faction::Alliance, (uint16_t)(C(1) | C(4) | C(8) | C(9)), {1.05f, 1.00f},
+    {7, "GNOME", "Gnome", "Гном", Faction::Alliance, (uint16_t)(C(1) | C(4) | C(6) | C(8) | C(9)), {1.05f, 1.00f},
      "Gnomes are brilliant, eccentric inventors who lost their city of Gnomeregan to a terrible invasion. Now guests of "
      "Ironforge, they put their sharp minds to arcane magic and engineering.",
      "Гномы — гениальные и эксцентричные изобретатели, потерявшие свой город Гномреган. Теперь они гостят в Стальгорне и "
@@ -52,7 +52,7 @@ const RaceInfo kRaces[] = {
      "Engineering Specialization: +15 Engineering",
      "Мастер побега: освобождение от обездвиживания\nПытливый ум: +5% к интеллекту\nСопротивление тайной магии: +10\n"
      "Инженерное дело: +15 к навыку"},
-    {2, "ORC", "Orc", "Орк", Faction::Horde, (uint16_t)(C(1) | C(3) | C(4) | C(7) | C(9)), {1.95f, 1.85f},
+    {2, "ORC", "Orc", "Орк", Faction::Horde, (uint16_t)(C(1) | C(3) | C(4) | C(6) | C(7) | C(9)), {1.95f, 1.85f},
      "Freed from the demonic curse that once drove them, the orcs of Durotar follow their warchief Thrall. Born warriors with a "
      "proud shamanistic tradition, they lead the Horde.",
      "Освободившись от демонического проклятия, орки Дуротара следуют за своим вождём Траллом. Прирождённые воины с гордой "
@@ -61,7 +61,7 @@ const RaceInfo kRaces[] = {
      "Axe Specialization: +5 Axes skill",
      "Кровавое неистовство: увеличивает силу атаки\nТвёрдость: +25% к шансу устоять при оглушении\nВластность: +5% к урону питомца\n"
      "Владение топорами: +5 к навыку"},
-    {5, "SCOURGE", "Undead", "Нежить", Faction::Horde, (uint16_t)(C(1) | C(4) | C(5) | C(8) | C(9)), {1.75f, 1.70f},
+    {5, "SCOURGE", "Undead", "Нежить", Faction::Horde, (uint16_t)(C(1) | C(4) | C(5) | C(6) | C(8) | C(9)), {1.75f, 1.70f},
      "Freed from the Lich King's will, the Forsaken of Undercity fight for their own survival under the banshee queen Sylvanas. "
      "They are cunning, ruthless and allied to the Horde out of necessity.",
      "Освободившись от воли Короля-лича, Отрёкшиеся из Подгорода сражаются за собственное выживание под предводительством "
@@ -70,7 +70,7 @@ const RaceInfo kRaces[] = {
      "Underwater Breathing: breathe four times longer\nShadow Resistance: +10",
      "Воля Отрёкшихся: снимает страх, подчинение и сон\nКаннибализм: восстанавливает здоровье, поедая трупы\n"
      "Подводное дыхание: в 4 раза дольше под водой\nСопротивление темной магии: +10"},
-    {6, "TAUREN", "Tauren", "Таурен", Faction::Horde, (uint16_t)(C(1) | C(3) | C(7) | C(11)), {2.55f, 2.30f},
+    {6, "TAUREN", "Tauren", "Таурен", Faction::Horde, (uint16_t)(C(1) | C(3) | C(6) | C(7) | C(11)), {2.55f, 2.30f},
      "The peaceful tauren roam the plains of Mulgore and honor the Earth Mother. Massive and strong, they are steadfast "
      "allies of the orcs and gifted druids, shamans and hunters.",
      "Миролюбивые таурены кочуют по равнинам Мулгора и чтят Мать-Землю. Огромные и сильные, они верные союзники орков и "
@@ -78,7 +78,7 @@ const RaceInfo kRaces[] = {
      "War Stomp: stun nearby enemies\nEndurance: +5% health\nCultivation: +15 Herbalism\nNature Resistance: +10",
      "Громовая поступь: оглушает врагов рядом\nВыносливость: +5% к здоровью\nСельское хозяйство: +15 к травничеству\n"
      "Сопротивление силам природы: +10"},
-    {8, "TROLL", "Troll", "Тролль", Faction::Horde, (uint16_t)(C(1) | C(3) | C(4) | C(5) | C(7) | C(8)), {2.20f, 2.10f},
+    {8, "TROLL", "Troll", "Тролль", Faction::Horde, (uint16_t)(C(1) | C(3) | C(4) | C(5) | C(6) | C(7) | C(8)), {2.20f, 2.10f},
      "The Darkspear trolls, once outcasts, owe their lives to Thrall and now live in Durotar. Savage and cunning, they are "
      "skilled hunters and mystics with a dark voodoo tradition.",
      "Тролли племени Чёрного Копья, бывшие изгнанники, обязаны жизнью Траллу и теперь живут в Дуротаре. Дикие и хитрые, они "
@@ -87,6 +87,20 @@ const RaceInfo kRaces[] = {
      "Beast Slaying: +5% damage against beasts\nBow and Throwing Specialization: +5 skill",
      "Берсерк: быстрее атаки и заклинания, когда вы ранены\nРегенерация: +10% к восстановлению здоровья\n"
      "Охота на зверей: +5% к урону по животным\nВладение луками и метательным оружием: +5 к навыку"},
+    {11, "DRAENEI", "Draenei", "Дреней", Faction::Alliance,
+     (uint16_t)(C(1) | C(2) | C(3) | C(5) | C(6) | C(7) | C(8)), {2.05f, 1.95f},
+     "The draenei fled the Burning Legion and found a new home with the Alliance. Their deep faith and mastery of the Light "
+     "make them steadfast allies.",
+     "Дренеи бежали от Пылающего Легиона и нашли новый дом в Альянсе. Их вера и владение Светом делают их надёжными союзниками.",
+     "Gift of the Naaru: heal over time\nGemcutting: +5 Jewelcrafting\nHeroic Presence: improves hit chance\nShadow Resistance: +10",
+     "Дар наару: периодическое исцеление\nЮвелирное дело: +5\nПрисутствие героя: повышает меткость\nСопротивление темной магии: +10"},
+    {10, "BLOODELF", "Blood Elf", "Эльф крови", Faction::Horde,
+     (uint16_t)(C(2) | C(3) | C(4) | C(5) | C(6) | C(8) | C(9)), {1.85f, 1.75f},
+     "The blood elves of Quel'Thalas draw on arcane power to survive. Their elegant culture hides a fierce determination "
+     "to reclaim their homeland.",
+     "Эльфы крови Кель'Таласа используют тайную магию, чтобы выжить. За их изящной культурой скрыта решимость вернуть родину.",
+     "Mana Tap: drain mana from an enemy\nArcane Torrent: silence nearby enemies and restore resources\nArcane Resistance: +10",
+     "Похищение маны: отнимает ману у противника\nВолшебный поток: немота врагов рядом и восстановление ресурсов\nСопротивление тайной магии: +10"},
 };
 const ClassInfo kClasses[] = {
     {1, "WARRIOR", "Warrior", "Воин", "Melee damage or tank. Uses rage. Plate armor at level 40.",
@@ -119,6 +133,12 @@ const ClassInfo kClasses[] = {
      "to destroy the minds of their enemies.",
      "Жрецы посвятили себя духу. Это лучшие лекари, они защищают союзников щитами или обращаются к тьме, чтобы сломить "
      "разум врагов."},
+    {6, "DEATHKNIGHT", "Death Knight", "Рыцарь смерти", "Melee damage or tank. Uses runes and runic power. Plate armor.",
+     "Урон в ближнем бою или танк. Руны и сила рун. Латы.",
+     "Death knights are former champions of the Lich King. They wield runes, convert their power into runic power and command "
+     "the forces of blood, frost and the unholy.",
+     "Рыцари смерти — бывшие чемпионы Короля-лича. Они используют руны, превращают их силу в силу рун и повелевают кровью, "
+     "льдом и нечестивой магией."},
     {7, "SHAMAN", "Shaman", "Шаман", "Healer, caster or melee. Uses mana. Mail armor at level 40. Horde only.",
      "Лекарь, заклинатель или боец. Мана. Кольчуга с 40 уровня. Только Орда.",
      "Shamans call on the spirits of the elements. They place totems to aid their allies, hurl lightning, heal with the "
@@ -161,41 +181,7 @@ void sortUnique(std::vector<uint8_t>& v) {
 }
 }  // namespace
 
-bool g_turtle = false;
-std::vector<RaceInfo>& turtleRaces() {
-    static std::vector<RaceInfo> v;
-    if (v.empty()) {
-        // Alliance first (the creation screen reads the order): the four of vanilla, High Elf, then the Horde and Goblin.
-        std::vector<RaceInfo> a, h;
-        for (const RaceInfo& r : kRaces) {
-            RaceInfo x = r;
-            if (x.id == 2) x.classMask |= C(8);               // Orc Mage
-            if (x.id == 3) x.classMask |= C(8);               // Dwarf Mage
-            if (x.id == 5) x.classMask |= C(3);               // Undead Hunter
-            if (x.id == 7) x.classMask |= C(3);               // Gnome Hunter
-            (x.faction == Faction::Alliance ? a : h).push_back(x);
-        }
-        a.push_back({10, "HIGHELF", "High Elf", "Высший эльф", Faction::Alliance,
-                     (uint16_t)(C(1) | C(2) | C(3) | C(4) | C(5) | C(8)), {2.15f, 2.05f},
-                     "The quel'dorei high elves of Alah'Thalas, exiles of the fallen Quel'Thalas, have joined the Alliance to "
-                     "win back their homeland.",
-                     "Высшие эльфы Ала'Талас, изгнанники павшего Кель'Таласа, присоединились к Альянсу, чтобы вернуть свою родину.",
-                     "Magic Resistance: +10 to all schools\nArcane Affinity: bonus to Arcane magic\nHigh Elf Lore: bonus to Spell hit",
-                     "Сопротивление магии: +10 ко всем школам\nСродство с тайной магией\nЗнания высших эльфов"});
-        h.push_back({9, "GOBLIN", "Goblin", "Гоблин", Faction::Horde,
-                     (uint16_t)(C(1) | C(3) | C(4) | C(5) | C(7) | C(8) | C(9)), {1.10f, 1.05f},
-                     "Goblins of the Bilgewater Cartel are clever, greedy tinkerers who have joined the Horde.",
-                     "Гоблины картеля Трюмных Вод — хитрые, жадные изобретатели, вступившие в Орду.",
-                     "Rocket Jump: leap forward\nBetter Living Through Chemistry: bonus to Alchemy\nBest Deals Anywhere: vendor discounts",
-                     "Ракетный прыжок\nХимия: бонус к алхимии\nЛучшие цены: скидки у торговцев"});
-        v = a;
-        v.insert(v.end(), h.begin(), h.end());
-    }
-    return v;
-}
-void setTurtle(bool on) { g_turtle = on; }
 const RaceInfo* races(int* count) {
-    if (g_turtle) { *count = (int)turtleRaces().size(); return turtleRaces().data(); }
     *count = (int)(sizeof kRaces / sizeof kRaces[0]);
     return kRaces;
 }
@@ -213,6 +199,10 @@ const ClassInfo* cls(uint8_t id) {
 bool allowed(uint8_t r, uint8_t c) {
     const RaceInfo* ri = race(r);
     return ri && c < 16 && (ri->classMask & (1u << c));
+}
+bool Texts::classAllowed(uint8_t r, uint8_t c) const {
+    if (classCombos_.empty()) return glue::allowed(r, c);
+    return classCombos_.count((uint16_t)((uint16_t)r << 8 | c)) != 0;
 }
 const char* raceName(uint8_t r, int lang) {
     const RaceInfo* ri = race(r);
@@ -253,6 +243,7 @@ bool Texts::load(const char* path) {
     gameLocale_.clear();
     zones_.clear();
     outfits_.clear();
+    classCombos_.clear();
     std::vector<char> line(8192);
     while (fgets(line.data(), (int)line.size(), f)) {
         std::vector<std::string> c = fields(line.data());
@@ -271,6 +262,8 @@ bool Texts::load(const char* path) {
             const uint32_t zid = (uint32_t)strtoul(c[1].c_str(), nullptr, 10);
             zones_[zid] = c[2];
             if (c.size() >= 4) zoneParents_[zid] = (uint32_t)strtoul(c[3].c_str(), nullptr, 10);
+        } else if (c[0] == "A" && c.size() >= 3) {
+            addClassCombo((uint8_t)atoi(c[1].c_str()), (uint8_t)atoi(c[2].c_str()));
         } else if (c[0] == "O" && c.size() >= 4) {
             std::vector<std::pair<uint32_t, uint8_t>> items;
             for (size_t i = 4; i + 1 < c.size(); i += 2)
@@ -285,6 +278,9 @@ bool Texts::load(const char* path) {
 
 void Texts::addOutfit(uint8_t race, uint8_t cls, uint8_t sex, const std::vector<std::pair<uint32_t, uint8_t>>& items) {
     outfits_[outfitKey(race, cls, sex)] = items;
+}
+void Texts::addClassCombo(uint8_t race, uint8_t cls) {
+    if (race && cls) classCombos_[(uint16_t)((uint16_t)race << 8 | cls)] = true;
 }
 
 const std::string* Texts::text(const std::string& key) const {

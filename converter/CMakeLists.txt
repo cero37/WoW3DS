@@ -117,6 +117,8 @@ if(W3D_TESTS AND NOT MINGW)
   target_link_libraries(spell_text_test PRIVATE w3dcore)
   add_executable(modern_adt_test tests/modern_adt_test.cpp)   # 6.86: WoW Forever split ADT
   target_link_libraries(modern_adt_test PRIVATE w3dcore)
+  add_executable(locale_test tests/locale_test.cpp)
+  target_link_libraries(locale_test PRIVATE w3dcore)
 endif()
 
 # Debug viewer: decodes a pack back to PNGs (textures + top-down terrain).

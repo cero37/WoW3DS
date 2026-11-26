@@ -206,15 +206,15 @@ bool loadBlp(const DataDir& data, const std::string& paths, Image& out, std::str
 }
 
 // 6.98: where each race's picture is on UI-CharacterCreate-Races.blp, the way the game's own CharacterCreate.lua says
-// (RACE_ICON_TCOORDS: ["HUMAN_MALE"] = {left, right, top, bottom}). The vanilla sheet is 4 x 4; TBC-sized ones (512 x 256,
-// Turtle WoW's with the High Elf and the Goblin) are laid out differently - read from the lua, else the TBC layout.
+// (RACE_ICON_TCOORDS: ["HUMAN_MALE"] = {left, right, top, bottom}). WotLK uses the TBC-sized sheet (512 x 256);
+// read the exact coordinates from the Lua, else use the standard WotLK layout.
 // Icon id: race * 2 + sex.
 struct Cell { float u0, v0, u1, v1; };
 std::map<int, Cell> raceIconCells(const DataDir& data, const Image& sheet, bool verbose) {
     std::map<int, Cell> out;
-    static const std::pair<const char*, int> kKeys[] = {{"HUMAN", 1},    {"ORC", 2},    {"DWARF", 3},  {"NIGHTELF", 4}, {"SCOURGE", 5},
-                                                        {"UNDEAD", 5},   {"TAUREN", 6}, {"GNOME", 7},  {"TROLL", 8},    {"GOBLIN", 9},
-                                                        {"BLOODELF", 10}, {"HIGHELF", 10}};
+    static const std::pair<const char*, int> kKeys[] = {{"HUMAN", 1}, {"ORC", 2}, {"DWARF", 3}, {"NIGHTELF", 4}, {"SCOURGE", 5},
+                                                        {"UNDEAD", 5}, {"TAUREN", 6}, {"GNOME", 7}, {"TROLL", 8},
+                                                        {"BLOODELF", 10}, {"DRAENEI", 11}};
     std::vector<uint8_t> b;
     for (const char* f : {"Interface\\GlueXML\\CharacterCreate.lua", "Interface\\FrameXML\\CharacterCreate.lua"}) {
         if (!data.read(f, b)) continue;
@@ -230,10 +230,10 @@ std::map<int, Cell> raceIconCells(const DataDir& data, const Image& sheet, bool 
         if (verbose) std::printf("  ui: race icons from %s: %zu\n", f, out.size());
         if (!out.empty()) return out;
     }
-    if (sheet.w == 2 * sheet.h) {   // no lua: the TBC sheet (8 x 4; Draenei / Blood Elf in the fifth column)
-        static const int kCol[11] = {0, 0, 3, 1, 3, 1, 0, 2, 2, 4, 4};   // by race; Goblin has no cell in TBC
-        static const int kRow[11] = {0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1};
-        for (int race = 1; race <= 10; ++race) {
+    if (sheet.w == 2 * sheet.h) {   // no lua: the WotLK sheet (8 x 4; Draenei / Blood Elf in the fifth column)
+        static const int kCol[12] = {0, 0, 3, 1, 3, 1, 0, 2, 2, 0, 4, 4};
+        static const int kRow[12] = {0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0};
+        for (int race = 1; race <= 11; ++race) {
             if (race == 9) continue;
             for (int sex = 0; sex < 2; ++sex) {
                 const float u0 = kCol[race] / 8.0f, v0 = (kRow[race] + 2 * sex) / 4.0f;
@@ -554,10 +554,9 @@ bool convertUi(const UiOptions& uo, const DataDir& data, bool verbose) {
             iconKeys.push_back({key, n});
             return true;
         };
-        if (spell.load(data, "Spell.dbc") && !iconPathById.empty()) {
-            int nameCol = spellNameColumn(spell);
-            if (nameCol < 0) nameCol = 120;
-            const uint32_t iconCol = (uint32_t)nameCol - 3, effCol = (uint32_t)nameCol - 59, trigCol = (uint32_t)nameCol - 11;
+        if (spell.load(data, "Spell.dbc") && !iconPathById.empty() && spellNameColumn(spell) >= 0) {
+            constexpr uint32_t iconCol = dbc335a::spell::SpellIconID, effCol = dbc335a::spell::Effect;
+            constexpr uint32_t trigCol = dbc335a::spell::EffectTriggerSpell;
             std::unordered_map<uint32_t, uint32_t> iconOf;
             for (uint32_t r = 0; r < spell.records; ++r) iconOf[spell.u32(r, 0)] = spell.u32(r, iconCol);
             for (uint32_t r = 0; r < spell.records; ++r) {
@@ -571,9 +570,9 @@ bool convertUi(const UiOptions& uo, const DataDir& data, bool verbose) {
                 if (id && p != iconPathById.end() && addIcon(W3D_UI_KEY(W3D_UIKEY_SPELL, id), p->second)) ++spellIcons;
             }
         }
-        if (idi.load(data, "ItemDisplayInfo.dbc") && idi.fields > 5)
+        if (idi.load(data, "ItemDisplayInfo.dbc") && idi.fields > dbc335a::itemDisplayInfo::InventoryIcon)
             for (uint32_t r = 0; r < idi.records; ++r) {
-                std::string n = idi.str(r, 5);
+                std::string n = idi.str(r, dbc335a::itemDisplayInfo::InventoryIcon);
                 if (!n.empty() && addIcon(W3D_UI_KEY(W3D_UIKEY_ITEM, idi.u32(r, 0)), "Interface\\Icons\\" + n)) ++itemIcons;
             }
     }
@@ -798,50 +797,37 @@ bool convertUi(const UiOptions& uo, const DataDir& data, bool verbose) {
     }
 
     // ---------------------------------------------------------------- loading screens
-    // Map.dbc names a LoadingScreens.dbc row per map; the column is found by looking for the one whose values are all
-    // LoadingScreens ids and differ most between maps (the fixed column number differs between client builds).
+    // Map.dbc.LoadingScreenID is column 57 in WotLK 3.3.5a.
     std::vector<W3dUiLoading> loading;
     size_t loadingFailed = 0;
-    int loadingCol = -1;
     if (uo.maps) {
         DbcTable mp, ls;
-        if (mp.load(data, "Map.dbc") && ls.load(data, "LoadingScreens.dbc") && ls.fields >= 3) {
+        if (mp.load(data, "Map.dbc") && mp.fields > dbc335a::map::LoadingScreenID &&
+            ls.load(data, "LoadingScreens.dbc") && ls.fields >= 3) {
             std::map<uint32_t, std::string> lsPath;
             for (uint32_t r = 0; r < ls.records; ++r) lsPath[ls.u32(r, 0)] = ls.str(r, 2);
-            size_t bestDistinct = 0;
-            for (uint32_t f = 3; f < mp.fields; ++f) {
-                std::set<uint32_t> distinct;
-                bool valid = true;
-                for (uint32_t r = 0; r < mp.records && valid; ++r) {
-                    uint32_t v = mp.u32(r, f);
-                    if (!v) continue;
-                    if (!lsPath.count(v)) valid = false;
-                    distinct.insert(v);
-                }
-                if (valid && distinct.size() >= 4 && distinct.size() > bestDistinct) { bestDistinct = distinct.size(); loadingCol = (int)f; }
-            }
-            if (loadingCol >= 0) {
-                std::map<uint32_t, int> texOf;   // LoadingScreens id -> (texture index) or -1 when it did not load
-                for (uint32_t r = 0; r < mp.records; ++r) {
-                    uint32_t lid = mp.u32(r, (uint32_t)loadingCol);
-                    if (!lid) continue;
-                    auto it = texOf.find(lid);
-                    if (it == texOf.end()) {
-                        int id = -1;
-                        Image src;
-                        progress(false, "ui: loading screen %u", lid);
-                        if (loadBlp(data, lsPath[lid], src) && src.w >= 64 && src.h >= 64) {
-                            // 4:3 pictures sit in the top 3/4 of a square texture
-                            Image pic = src.w == src.h ? crop(src, 0, 0, 1.0f, 0.75f) : src;
-                            Image tex = resample(pic, 512, 256);
-                            id = addTex(tex, W3D_TEX_ETC1, W3D_UITEX_MAP);
-                        } else {
-                            ++loadingFailed;
-                        }
-                        it = texOf.emplace(lid, id).first;
+            std::map<uint32_t, int> texOf;  // LoadingScreens id -> (texture index) or -1 when it did not load
+            for (uint32_t r = 0; r < mp.records; ++r) {
+                uint32_t lid = mp.u32(r, dbc335a::map::LoadingScreenID);
+                if (!lid) continue;
+                auto path = lsPath.find(lid);
+                if (path == lsPath.end()) continue;
+                auto it = texOf.find(lid);
+                if (it == texOf.end()) {
+                    int id = -1;
+                    Image src;
+                    progress(false, "ui: loading screen %u", lid);
+                    if (loadBlp(data, path->second, src) && src.w >= 64 && src.h >= 64) {
+                        // 4:3 pictures sit in the top 3/4 of a square texture
+                        Image pic = src.w == src.h ? crop(src, 0, 0, 1.0f, 0.75f) : src;
+                        Image tex = resample(pic, 512, 256);
+                        id = addTex(tex, W3D_TEX_ETC1, W3D_UITEX_MAP);
+                    } else {
+                        ++loadingFailed;
                     }
-                    if (it->second >= 0) loading.push_back({mp.u32(r, 0), (uint16_t)it->second, 512, 256, 0});
+                    it = texOf.emplace(lid, id).first;
                 }
+                if (it->second >= 0) loading.push_back({mp.u32(r, 0), (uint16_t)it->second, 512, 256, 0});
             }
         }
     }
@@ -891,7 +877,8 @@ bool convertUi(const UiOptions& uo, const DataDir& data, bool verbose) {
     std::printf("  skin: %zu sprites on %zu pages, %zu config entries missing in this client\n", spr.size(), skinPages, skinMissing);
     std::printf("  fonts: %s\n", fontNote.c_str());
     std::printf("  maps: %zu (%zu overlays), %zu without tiles\n", maps.size(), overlays, mapsFailed);
-    std::printf("  loading screens: %zu maps (Map.dbc column %d), %zu pictures failed\n", loading.size(), loadingCol, loadingFailed);
+    std::printf("  loading screens: %zu maps (Map.dbc column %u), %zu pictures failed\n", loading.size(),
+                dbc335a::map::LoadingScreenID, loadingFailed);
     return true;
 }
 

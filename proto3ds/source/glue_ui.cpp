@@ -75,6 +75,9 @@ uint8_t fit(const std::vector<uint8_t>& v, uint8_t cur) {
     if (v.empty() || std::find(v.begin(), v.end(), cur) != v.end()) return cur;
     return v[0];
 }
+bool classAllowed(const GlueModel& m, uint8_t race, uint8_t cls) {
+    return m.texts ? m.texts->classAllowed(race, cls) : glue::allowed(race, cls);
+}
 }  // namespace
 
 // =================================================================== state
@@ -93,7 +96,7 @@ void GlueUi::startCreate(uint8_t race, uint8_t sex, const GlueModel& m) {
     int n = 0;
     const glue::ClassInfo* cs = glue::classes(&n);
     for (int i = 0; i < n; ++i)
-        if (glue::allowed(create.race, cs[i].id)) { create.cls = cs[i].id; break; }
+        if (classAllowed(m, create.race, cs[i].id)) { create.cls = cs[i].id; break; }
     randomize(m);
     modelYaw = 0;
     infoTab_ = 0;
@@ -137,11 +140,11 @@ void GlueUi::selectRace(uint8_t race, const GlueModel& m) {
     if (!glue::race(race)) return;
     if (race != create.race) {
         create.race = race;
-        if (!glue::allowed(race, create.cls)) {
+        if (!classAllowed(m, race, create.cls)) {
             int n = 0;
             const glue::ClassInfo* cs = glue::classes(&n);
             for (int i = 0; i < n; ++i)
-                if (glue::allowed(race, cs[i].id)) { create.cls = cs[i].id; break; }
+                if (classAllowed(m, race, cs[i].id)) { create.cls = cs[i].id; break; }
         }
         create.skin = create.face = create.hairStyle = create.hairColor = create.facial = 0;   // another model's choices
         (void)m;
@@ -194,7 +197,7 @@ GlueAction GlueUi::activate(const Widget& w, const GlueModel& m) {
         case kRace: selectRace((uint8_t)w.arg, m); return GlueAction::None;
         case kSex: if (create.sex != w.arg) { create.sex = (uint8_t)w.arg; create.face = create.hairStyle = create.hairColor = create.facial = 0; ++rev_; } return GlueAction::None;
         case kClass:
-            if (glue::allowed(create.race, (uint8_t)w.arg)) { create.cls = (uint8_t)w.arg; infoTab_ = 1; infoScroll_ = 0; ++rev_; }
+            if (classAllowed(m, create.race, (uint8_t)w.arg)) { create.cls = (uint8_t)w.arg; infoTab_ = 1; infoScroll_ = 0; ++rev_; }
             return GlueAction::None;
         case kLook: stepLook(w.arg / 2, (w.arg & 1) ? 1 : -1, m); return GlueAction::None;
         case kRealmRow:
@@ -482,7 +485,7 @@ void GlueUi::topLogin(HudList& l, const GlueModel& m) {
     addTop(318, 186, 76, 20, GlueAction::Offline, 0, kButton);
     button(l, 318, 210, 76, 22, tr("Quit", "Выход"), true, focused(kButton, GlueAction::Quit, 0));
     addTop(318, 210, 76, 22, GlueAction::Quit, 0, kButton);
-    l.text(4, 226, "Version 1.12.1 (5875)", kGlueDim, true, Font::Small);
+    l.text(4, 226, "Version 3.3.5a (12340)", kGlueDim, true, Font::Small);
 }
 
 void GlueUi::topRealms(HudList& l, const GlueModel& m) {
@@ -585,12 +588,12 @@ void GlueUi::topCreate(HudList& l, const GlueModel& m) {
     panel(l, 300, 0, 100, 240, 170);
     for (int i = 0; i < nc; ++i) {
         const glue::ClassInfo& c = cs[i];
-        const int x = 306 + (i % 3) * 31, y = 6 + (i / 3) * 31;
+        const int x = 303 + (i % 4) * 24, y = 8 + (i / 4) * 30;
         char icon[16];
         snprintf(icon, sizeof icon, "class_%d", c.id);
-        const bool ok = glue::allowed(create.race, c.id);
-        iconButton(l, x, y, 27, icon, tr(c.en, c.ru), create.cls == c.id, focused(kClass, GlueAction::None, c.id), ok);
-        addTop(x, y, 27, 27, GlueAction::None, c.id, kClass);
+        const bool ok = classAllowed(m, create.race, c.id);
+        iconButton(l, x, y, 23, icon, tr(c.en, c.ru), create.cls == c.id, focused(kClass, GlueAction::None, c.id), ok);
+        addTop(x, y, 23, 23, GlueAction::None, c.id, kClass);
     }
     const uint8_t vals[5] = {create.skin, create.face, create.hairStyle, create.hairColor, create.facial};
     const std::vector<uint8_t>* lists[5] = {&m.appearance.skins, &m.appearance.faces, &m.appearance.hairStyles,
@@ -657,16 +660,12 @@ void GlueUi::bottomLogin(HudList& l, const GlueModel& m) {
     }
     button(l, 90, 130, 140, 30, tr("Login", "Войти"), true, false);
     addBottom(90, 130, 140, 30, GlueAction::Login, 0, kButton);
-    char p[32], g[32];
-    if (m.turtle) snprintf(p, sizeof p, "Turtle 1.18");   // 6.58: Turtle WoW clones (build 7272)
-    else snprintf(p, sizeof p, "%s %d", tr("Protocol", "Протокол"), m.protocol);
+    char g[32];
     snprintf(g, sizeof g, "%s %s", tr("Log", "Журнал"), m.packetLog ? tr("on", "вкл") : tr("off", "выкл"));
     button(l, 8, 172, 98, 24, tr("Offline", "Без сети"), true, false);
     addBottom(8, 172, 98, 24, GlueAction::Offline, 0, kButton);
-    button(l, 111, 172, 98, 24, p, true, false);
-    addBottom(111, 172, 98, 24, GlueAction::ToggleProtocol, 0, kButton);
-    button(l, 214, 172, 98, 24, g, true, false);
-    addBottom(214, 172, 98, 24, GlueAction::ToggleLog, 0, kButton);
+    button(l, 111, 172, 201, 24, g, true, false);
+    addBottom(111, 172, 201, 24, GlueAction::ToggleLog, 0, kButton);
     button(l, 214, 208, 98, 24, tr("Quit", "Выход"), true, false);
     addBottom(214, 208, 98, 24, GlueAction::Quit, 0, kButton);
     l.text(8, 206, tr("D-pad, A: the top screen", "Крестовина, A: верхний экран"), kGlueDim, false, Font::Small);
@@ -792,7 +791,7 @@ void GlueUi::bottomCreate(HudList& l, const GlueModel& m) {
         int nr = 0;
         const glue::RaceInfo* rs = glue::races(&nr);
         for (int i = 0; i < nr; ++i)
-            if (glue::allowed(rs[i].id, create.cls)) who += (who.empty() ? "" : ", ") + std::string(tr(rs[i].en, rs[i].ru));
+            if (classAllowed(m, rs[i].id, create.cls)) who += (who.empty() ? "" : ", ") + std::string(tr(rs[i].en, rs[i].ru));
         traitsTitle = tr("Races", "Расы");
         paras.push_back(who);
     }

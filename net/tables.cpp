@@ -35,6 +35,7 @@ bool TalentTable::load(const char* path) {
     if (!f) return false;
     trees_.clear();
     talents_.clear();
+    glyphSpells_.clear();
     char line[512];
     while (fgets(line, sizeof line, f)) {
         std::vector<std::string> c = fields(line);
@@ -46,6 +47,9 @@ bool TalentTable::load(const char* path) {
             t.reqTalent = num(c[5]); t.reqRank = num(c[6]);
             for (int k = 0; k < 5; ++k) t.rankSpell[k] = num(c[7 + k]);
             talents_.push_back(t);
+        } else if (c[0] == "G" && c.size() >= 3) {
+            const uint32_t id = num(c[1]), spell = num(c[2]);
+            if (id && spell) glyphSpells_[id] = spell;
         }
     }
     fclose(f);

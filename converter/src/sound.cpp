@@ -557,9 +557,8 @@ void exportWorldTables(const DataDir& data, WorldCtx& w, bool verbose) {
                      "\t" + std::to_string(mis) + "\t" + std::to_string(chan) + "\n";
             for (uint32_t s : {pre, cast, imp, mis, chan}) if (s) w.used.insert(s);
         }
-        int nameCol = spellNameColumn(spell);
-        if (nameCol < 0) nameCol = 120;
-        const uint32_t visCol = (uint32_t)nameCol - 5;
+        const int nameCol = spellNameColumn(spell);
+        const uint32_t visCol = nameCol >= 0 ? dbc335a::spell::SpellVisualID : spell.fields;
         size_t np = 0;
         for (uint32_t r = 0; r < spell.records; ++r)
             if (uint32_t v = spell.u32(r, visCol); visuals.count(v)) {
@@ -585,7 +584,8 @@ const VoiceRace kVoiceRaces[] = {
     {6, {"tauren", nullptr}, "Tauren", "Tauren", "Tauren", {"Tauren", nullptr}},
     {7, {"gnome", nullptr}, "Gnome", "Gnome", "Gnome", {"Gnome", nullptr}},
     {8, {"troll", nullptr}, "Troll", "Troll", "Troll", {"Troll", nullptr}},
-    {9, {"goblin", nullptr}, "Goblin", nullptr, "Goblin", {"Goblin", nullptr}},
+    {10, {"bloodelf", nullptr}, "BloodElf", "BloodElf", "BloodElf", {"BloodElf", nullptr}},
+    {11, {"draenei", nullptr}, "Draenei", "Draenei", "Draenei", {"Draenei", nullptr}},
 };
 const char* const kErrTokens[] = {
     "nomana", "norage", "noenergy", "outofrange", "genericnotarget", "invalidattacktarget", "spellcooldown",
@@ -1220,8 +1220,10 @@ bool convertSound(const SoundOptions& so, const DataDir& data, bool verbose) {
     if (haveAmb) for (uint32_t r = 0; r < amb.records; ++r) ambRow[amb.u32(r, 0)] = r;
     std::map<uint32_t, uint32_t> mapFirstArea;
     for (uint32_t r = 0; r < area.records; ++r) {
-        uint32_t id = area.u32(r, 0), map = area.u32(r, 1), parent = area.u32(r, 2);
-        uint32_t a = so.ambience ? area.u32(r, 7) : 0, z = so.music ? area.u32(r, 8) : 0;
+        uint32_t id = area.u32(r, 0), map = area.u32(r, dbc335a::area::ContinentID);
+        uint32_t parent = area.u32(r, dbc335a::area::ParentAreaID);
+        uint32_t a = so.ambience ? area.u32(r, dbc335a::area::AmbienceID) : 0;
+        uint32_t z = so.music ? area.u32(r, dbc335a::area::ZoneMusic) : 0;
         if (!zmRow.count(z)) z = 0;
         if (!ambRow.count(a)) a = 0;
         if (!parent && !mapFirstArea.count(map)) mapFirstArea[map] = id;
@@ -1321,7 +1323,7 @@ bool convertSound(const SoundOptions& so, const DataDir& data, bool verbose) {
     if (maps.load(data, "Map.dbc")) {
         for (uint32_t r = 0; r < maps.records; ++r) {
             uint32_t id = maps.u32(r, 0);
-            std::string dir = maps.str(r, 1);
+            std::string dir = maps.str(r, dbc335a::map::Directory);
             if (dir.empty()) continue;
             size_t tiles = 0;
             if (so.areas && exportAreas(data, id, dir, base + "areas_" + std::to_string(id) + ".bin", &tiles))

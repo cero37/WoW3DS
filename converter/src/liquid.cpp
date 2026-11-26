@@ -265,13 +265,14 @@ const LightDb& lightDb(const Options& o, const DataDir* data) {
     L.loaded = true;
     if (!data) return L;
     DbcTable maps, light;
-    if (!maps.load(*data, "Map.dbc") || !light.load(*data, "Light.dbc") || light.fields < 10 ||
+    if (!maps.load(*data, "Map.dbc") || !light.load(*data, "Light.dbc") ||
+        light.fields <= dbc335a::light::LightParamsID + 2 ||
         !L.ib.load(*data, "LightIntBand.dbc") || L.ib.fields < 34)
         return L;
     L.fb.load(*data, "LightFloatBand.dbc");
     uint32_t mapId = 0xFFFFFFFFu;
     for (uint32_t r = 0; r < maps.records; ++r) {
-        std::string d = maps.str(r, 1);
+        std::string d = maps.str(r, dbc335a::map::Directory);
         if (d.size() == o.map.size() && std::equal(d.begin(), d.end(), o.map.begin(),
                                                     [](char a, char b) { return std::tolower((unsigned char)a) == std::tolower((unsigned char)b); }))
             mapId = maps.u32(r, 0);
@@ -279,15 +280,16 @@ const LightDb& lightDb(const Options& o, const DataDir* data) {
     if (mapId == 0xFFFFFFFFu) return L;
     const float zp = 32.0f * TS;
     for (uint32_t r = 0; r < light.records; ++r) {
-        if (light.u32(r, 1) != mapId) continue;
+        if (light.u32(r, dbc335a::light::ContinentID) != mapId) continue;
         LightVol v;
-        const float dx = light.f32(r, 2), dy = light.f32(r, 4);
+        const float dx = light.f32(r, dbc335a::light::GameCoords);
+        const float dy = light.f32(r, dbc335a::light::GameCoords + 2);
         v.x = zp - dy / 36.0f;
         v.y = zp - dx / 36.0f;
-        v.inner = light.f32(r, 5) / 36.0f;
-        v.outer = light.f32(r, 6) / 36.0f;
-        v.clear = light.u32(r, 7);
-        v.under = light.u32(r, 9);
+        v.inner = light.f32(r, dbc335a::light::FalloffStart) / 36.0f;
+        v.outer = light.f32(r, dbc335a::light::FalloffEnd) / 36.0f;
+        v.clear = light.u32(r, dbc335a::light::LightParamsID);
+        v.under = light.u32(r, dbc335a::light::LightParamsID + 2);
         if (dx == 0 && dy == 0 && v.outer <= 0) { v.x = v.y = 0; v.outer = 0; }   // the map's global light
         L.vols.push_back(v);
     }

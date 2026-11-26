@@ -1,9 +1,7 @@
 // Text tables for the 3DS client (UI stages 4/6), next to spells.txt / factions.txt:
-//   talents.txt  "B tab classMask order name" per TalentTab.dbc row, "T id tab row col reqTalent reqRank rank1..5"
-//                per Talent.dbc row (1.12: ID, TabID, Row, Column, RankID[5] 4-8, PrereqTalent[3] 9-11,
-//                PrereqRank[3] 12-14; TalentTab: ID, Name[8] 1-8, flags 9, icon 10, race mask 11, class mask 12,
-//                pet mask 13, order 14, background 15)
-//   taxi.txt     "N id map x y z name" per TaxiNodes.dbc row (ID, map, X, Y, Z, Name[8] 5-12) and
+//   talents.txt  "B tab classMask order name" per TalentTab.dbc row; localized names occupy columns 1..16 in WotLK.
+//                "T id tab row col reqTalent reqRank rank1..5" per Talent.dbc row.
+//   taxi.txt     "N id map x y z name" per TaxiNodes.dbc row (ID, map, X, Y, Z, Name[16] 5-20) and
 //                "P from to cost" per TaxiPath.dbc row (ID, from, to, cost)
 #include "conv.h"
 #include "../../common/w3d_transport_periods.h"
@@ -34,7 +32,7 @@ bool writeText(const std::string& path, const std::string& s) {
 
 bool exportTalents(const DataDir& data, const std::string& path, bool verbose) {
     DbcTable tabs, tal;
-    if (!tabs.load(data, "TalentTab.dbc") || !tal.load(data, "Talent.dbc") || tabs.fields < 15 || tal.fields < 15) {
+    if (!tabs.load(data, "TalentTab.dbc") || !tal.load(data, "Talent.dbc") || tabs.fields < 23 || tal.fields < 15) {
         std::fprintf(stderr, "talents: TalentTab.dbc / Talent.dbc not found (no talents.txt)\n");
         return false;
     }
@@ -42,8 +40,8 @@ bool exportTalents(const DataDir& data, const std::string& path, bool verbose) {
     size_t nb = 0, nt = 0;
     for (uint32_t r = 0; r < tabs.records; ++r) {
         if (!tabs.u32(r, 0)) continue;
-        out += "B\t" + std::to_string(tabs.u32(r, 0)) + "\t" + std::to_string(tabs.u32(r, 12)) + "\t" + std::to_string(tabs.u32(r, 14)) +
-               "\t" + firstLocale(tabs, r, 1, 9) + "\n";
+        out += "B\t" + std::to_string(tabs.u32(r, 0)) + "\t" + std::to_string(tabs.u32(r, 20)) + "\t" +
+               std::to_string(tabs.u32(r, 22)) + "\t" + firstLocale(tabs, r, 1, 17) + "\n";
         ++nb;
     }
     for (uint32_t r = 0; r < tal.records; ++r) {
@@ -53,18 +51,30 @@ bool exportTalents(const DataDir& data, const std::string& path, bool verbose) {
         out += "\n";
         ++nt;
     }
+    DbcTable glyphs;
+    size_t ng = 0;
+    if (glyphs.load(data, "GlyphProperties.dbc") && glyphs.fields >= 2) {
+        for (uint32_t r = 0; r < glyphs.records; ++r) {
+            const uint32_t id = glyphs.u32(r, 0), spell = glyphs.u32(r, 1);
+            if (!id || !spell) continue;
+            out += "G\t" + std::to_string(id) + "\t" + std::to_string(spell) + "\n";
+            ++ng;
+        }
+    } else if (verbose) {
+        std::fprintf(stderr, "talents: GlyphProperties.dbc unavailable (glyph names will be limited)\n");
+    }
     if (!writeText(path, out)) return false;
-    std::printf("  talents: %zu trees, %zu talents written to %s\n", nb, nt, path.c_str());
+    std::printf("  talents: %zu trees, %zu talents, %zu glyphs written to %s\n", nb, nt, ng, path.c_str());
     (void)verbose;
     return true;
 }
 
-// skills.txt: "S id category name description" per SkillLine.dbc row (1.12: ID 0, CategoryID 1, SkillCostsID 2, DisplayName[8] 3-10,
-// flags 11, Description[8] 12-19, flags 20, SpellIcon 21). Categories: 5 attributes, 6 weapon, 7 class, 8 armor, 9 secondary
+// skills.txt: "S id category name description" per SkillLine.dbc row (WotLK DisplayName[16] 3-18, Description[16] 20-35).
+// Categories: 5 attributes, 6 weapon, 7 class, 8 armor, 9 secondary
 // professions, 10 languages, 11 professions, 12 not shown (-1: also not shown).
 bool exportSkills(const DataDir& data, const std::string& path, bool verbose) {
     DbcTable t;
-    if (!t.load(data, "SkillLine.dbc") || t.fields < 13) {
+    if (!t.load(data, "SkillLine.dbc") || t.fields < 36) {
         std::fprintf(stderr, "skills: SkillLine.dbc not found (no skills.txt)\n");
         return false;
     }
@@ -72,10 +82,10 @@ bool exportSkills(const DataDir& data, const std::string& path, bool verbose) {
     size_t n = 0;
     for (uint32_t r = 0; r < t.records; ++r) {
         if (!t.u32(r, 0)) continue;
-        std::string name = firstLocale(t, r, 3, 11);
+        std::string name = firstLocale(t, r, 3, 19);
         if (name.empty()) continue;
         out += "S\t" + std::to_string(t.u32(r, 0)) + "\t" + std::to_string((int32_t)t.u32(r, 1)) + "\t" + name + "\t" +
-               firstLocale(t, r, 12, 20) + "\n";
+               firstLocale(t, r, 20, 36) + "\n";
         ++n;
     }
     if (!writeText(path, out)) return false;
@@ -85,29 +95,21 @@ bool exportSkills(const DataDir& data, const std::string& path, bool verbose) {
 }
 
 // Item enchantments (7.16): what an applied enchant shows on an item card. "@enchant<TAB>id<TAB>name" from
-// SpellItemEnchantment.dbc (1.12: ID 0, effects 1-3, min 4-6, max 7-9, effect args 10-12, names 13-20; 24 fields).
+// SpellItemEnchantment.dbc: WotLK localized names are columns 14..29.
 // Shiny Bauble applies 263 ("Fishing Lure +25"), a sharpening stone 13 ("Sharpened +3").
 bool exportEnchants(const DataDir& data, const std::string& path, bool verbose) {
     DbcTable t;
-    if (!t.load(data, "SpellItemEnchantment.dbc") || t.fields < 14) {
+    if (!t.load(data, "SpellItemEnchantment.dbc") || t.fields <= 29) {
         std::fprintf(stderr, "enchants: SpellItemEnchantment.dbc not found (no @enchant lines)\n");
         return false;
     }
-    uint32_t nameCol = 13;
-    // calibration: the row of Fishing Lure +25 (263) has "Fishing" in the English name column (some custom clients
-    // insert an extra column); fall back to 13.
-    for (uint32_t r = 0; r < t.records; ++r) {
-        if (t.u32(r, 0) != 263) continue;
-        for (uint32_t c = 13; c < t.fields; ++c)
-            if (t.str(r, c).find("Fishing") != std::string::npos) { nameCol = c; break; }
-        break;
-    }
+    constexpr uint32_t nameCol = 14;
     std::string out;
     size_t n = 0;
     for (uint32_t r = 0; r < t.records; ++r) {
         const uint32_t id = t.u32(r, 0);
         if (!id) continue;
-        std::string name = firstLocale(t, r, nameCol, nameCol + 8);
+        std::string name = firstLocale(t, r, nameCol, nameCol + 16);
         if (name.empty()) continue;
         out += "@enchant\t" + std::to_string(id) + "\t" + name + "\n";
         ++n;
@@ -127,19 +129,17 @@ bool exportEnchants(const DataDir& data, const std::string& path, bool verbose) 
 // SkillLineAbility.dbc row of a profession / secondary skill whose spell creates an item (effect 24) or enchants one (effect 53).
 // 1.12 SkillLineAbility: ID 0, SkillLine 1, Spell 2, RaceMask 3, ClassMask 4, ExcludeRace 5, ExcludeClass 6, MinSkillLineRank 7,
 // SupercededBySpell 8, AcquireMethod 9, TrivialSkillLineRankHigh 10 (grey), TrivialSkillLineRankLow 11 (green).
-// Spell.dbc relative to the name column (120 in 1.12): Totem[2] -80, Reagent[8] -78, ReagentCount[8] -70, Effect[3] -59,
-// EffectDieSides -56, EffectBaseDice -53, EffectBasePoints -44, EffectItemType -17. kind: 0 creates an item, 1 enchants an item.
+// WotLK Spell.dbc: Totem[2] 50, Reagent[8] 52, ReagentCount[8] 60, Effect[3] 71, EffectBasePoints 80,
+// EffectItemType 107. kind: 0 creates an item, 1 enchants an item.
 // tools / reagents: "entry:count,entry:count" (tools count 1), "-" when none.
-// 6.90: a 12th column "class:subclassMask:inventoryTypeMask" - what the spell may be cast on (EquippedItemClass -62, -1 = any;
-// EquippedItemSubClassMask -61; EquippedItemInventoryTypeMask -60): an enchant offers only the items it fits (a weapon, boots ...).
+// The final column limits an enchant to its WotLK EquippedItemClass/Subclass/InventoryType fields (68-70).
 bool exportRecipes(const DataDir& data, const std::string& path, bool verbose) {
     DbcTable spell, sla, line;
     if (!spell.load(data, "Spell.dbc") || !sla.load(data, "SkillLineAbility.dbc") || sla.fields < 12) {
         std::fprintf(stderr, "recipes: Spell.dbc / SkillLineAbility.dbc not found (no recipes.txt)\n");
         return false;
     }
-    const int nameCol = spellNameColumn(spell);
-    if (nameCol < 80) {
+    if (spellNameColumn(spell) < 0) {
         std::fprintf(stderr, "recipes: the Spell.dbc name column was not found (no recipes.txt)\n");
         return false;
     }
@@ -148,7 +148,6 @@ bool exportRecipes(const DataDir& data, const std::string& path, bool verbose) {
         for (uint32_t r = 0; r < line.records; ++r) category[line.u32(r, 0)] = (int32_t)line.u32(r, 1);
     std::unordered_map<uint32_t, uint32_t> rowOf;
     for (uint32_t r = 0; r < spell.records; ++r) rowOf[spell.u32(r, 0)] = r;
-    const uint32_t N = (uint32_t)nameCol;
     std::string out = "# wow3ds recipes: R skill spell minRank low high kind item count tools reagents class:subMask:invMask\n";
     size_t n = 0;
     auto list = [&](uint32_t row, uint32_t itemCol, uint32_t countCol, int cnt, bool counts) {
@@ -171,11 +170,11 @@ bool exportRecipes(const DataDir& data, const std::string& path, bool verbose) {
         int kind = -1;
         uint32_t item = 0, count = 1;
         for (uint32_t k = 0; k < 3; ++k) {
-            const uint32_t eff = spell.u32(row, N - 59 + k);
+            const uint32_t eff = spell.u32(row, dbc335a::spell::Effect + k);
             if (eff == 24 && kind < 0) {
                 kind = 0;
-                item = spell.u32(row, N - 17 + k);
-                const int32_t base = (int32_t)spell.u32(row, N - 44 + k);
+                item = spell.u32(row, dbc335a::spell::EffectItemType + k);
+                const int32_t base = (int32_t)spell.u32(row, dbc335a::spell::EffectBasePoints + k);
                 count = (uint32_t)std::max<int32_t>(1, base + 1);
             } else if (eff == 53 && kind < 0) {
                 kind = 1;
@@ -186,8 +185,10 @@ bool exportRecipes(const DataDir& data, const std::string& path, bool verbose) {
         std::snprintf(head, sizeof head, "R\t%u\t%u\t%u\t%u\t%u\t%d\t%u\t%u\t", skill, id, sla.u32(r, 7), sla.u32(r, 11), sla.u32(r, 10), kind,
                       item, count);
         char req[64];
-        std::snprintf(req, sizeof req, "\t%d:%u:%u", (int32_t)spell.u32(row, N - 62), spell.u32(row, N - 61), spell.u32(row, N - 60));
-        out += std::string(head) + list(row, N - 80, 0, 2, false) + "\t" + list(row, N - 78, N - 70, 8, true) + req + "\n";
+        std::snprintf(req, sizeof req, "\t%d:%u:%u", (int32_t)spell.u32(row, dbc335a::spell::EquippedItemClass),
+                      spell.u32(row, dbc335a::spell::EquippedItemSubclass), spell.u32(row, dbc335a::spell::EquippedItemInvTypes));
+        out += std::string(head) + list(row, dbc335a::spell::Totem, 0, 2, false) + "\t" +
+               list(row, dbc335a::spell::Reagent, dbc335a::spell::ReagentCount, 8, true) + req + "\n";
         ++n;
     }
     if (!writeText(path, out)) return false;
@@ -198,7 +199,7 @@ bool exportRecipes(const DataDir& data, const std::string& path, bool verbose) {
 
 bool exportTaxi(const DataDir& data, const std::string& path, bool verbose) {
     DbcTable nodes, paths;
-    if (!nodes.load(data, "TaxiNodes.dbc") || nodes.fields < 6) {
+    if (!nodes.load(data, "TaxiNodes.dbc") || nodes.fields < 21) {
         std::fprintf(stderr, "taxi: TaxiNodes.dbc not found (no taxi.txt)\n");
         return false;
     }
@@ -210,7 +211,7 @@ bool exportTaxi(const DataDir& data, const std::string& path, bool verbose) {
         if (!nodes.u32(r, 0)) continue;
         std::snprintf(b, sizeof b, "N\t%u\t%u\t%.1f\t%.1f\t%.1f\t", nodes.u32(r, 0), nodes.u32(r, 1), nodes.f32(r, 2), nodes.f32(r, 3),
                       nodes.f32(r, 4));
-        out += b + firstLocale(nodes, r, 5, 13) + "\n";
+        out += b + firstLocale(nodes, r, 5, 21) + "\n";
         ++nn;
     }
     if (havePaths)
@@ -334,9 +335,7 @@ bool exportLocks(const DataDir& data, const std::string& path, bool verbose) {
         ++nl;
     }
     if (spell.load(data, "Spell.dbc")) {
-        int nameCol = spellNameColumn(spell);
-        if (nameCol < 0) nameCol = 120;
-        const uint32_t effCol = (uint32_t)nameCol - 59, miscCol = (uint32_t)nameCol - 14;
+        const uint32_t effCol = dbc335a::spell::Effect, miscCol = dbc335a::spell::EffectMiscValue;
         for (uint32_t r = 0; r < spell.records; ++r)
             for (uint32_t k = 0; k < 3; ++k)
                 if (spell.u32(r, effCol + k) == 33) {
@@ -380,6 +379,7 @@ bool exportAreaTriggers(const DataDir& data, const std::string& path, bool verbo
 //   T KEY<TAB>text      every string of Interface\GlueXML\GlueStrings.lua (race / class descriptions RACE_INFO_*,
 //                       CLASS_INFO_*, ...); "\n" stays as the two characters
 //   L code              the game language (7.18): the client sends it at login, so the server answers in it
+//   A race class        CharStartOutfit.dbc: a playable race/class combination
 //   O race class sex disp inv ... (12 pairs)   CharStartOutfit.dbc: the clothes a new character is shown in
 //   Z area name parent  AreaTable.dbc: the area names (the character list, the zone banner); parent = the zone of a subzone
 bool exportGlueTexts(const DataDir& data, const std::string& path, bool verbose) {
@@ -387,7 +387,7 @@ bool exportGlueTexts(const DataDir& data, const std::string& path, bool verbose)
     std::string loc = gameLocaleDir();   // 7.18: the game language; the client announces it at login (server texts)
     if (loc.empty() || loc == "auto") loc = "enUS";
     out += "L\t" + loc + "\n";
-    size_t nt = 0, no = 0, nz = 0;
+    size_t nt = 0, na = 0, no = 0, nz = 0;
     // ---- GlueStrings.lua: NAME = "text";  (Lua escapes \" \\ \n)
     std::vector<uint8_t> lua;
     if (data.read("Interface\\GlueXML\\GlueStrings.lua", lua)) {
@@ -429,13 +429,42 @@ bool exportGlueTexts(const DataDir& data, const std::string& path, bool verbose)
         std::fprintf(stderr, "glue: Interface\\GlueXML\\GlueStrings.lua not found (the 3DS uses its own texts)\n");
     }
     // ---- CharStartOutfit.dbc: ID, race/class/sex/outfit bytes, ItemID[N], DisplayItemID[N], InventoryType[N]
-    DbcTable so;
+    DbcTable so, races, classes;
+    std::set<uint32_t> playableRaces, playableClasses;
+    const bool haveRaces = races.load(data, "ChrRaces.dbc") &&
+                           races.fields > dbc335a::chrRaces::RequiredExpansion &&
+                           races.fields > dbc335a::chrRaces::ClientPrefix;
+    const bool haveClasses = classes.load(data, "ChrClasses.dbc") &&
+                             classes.fields > dbc335a::chrClasses::RequiredExpansion &&
+                             classes.fields > dbc335a::chrClasses::Name + 15;
+    if (haveRaces)
+        for (uint32_t r = 0; r < races.records; ++r) {
+            const uint32_t id = races.u32(r, 0);
+            if (id && !races.str(r, dbc335a::chrRaces::ClientPrefix).empty() &&
+                !(races.u32(r, dbc335a::chrRaces::Flags) & dbc335a::chrRaces::NotPlayable) &&
+                races.u32(r, dbc335a::chrRaces::RequiredExpansion) <= 2)
+                playableRaces.insert(id);
+        }
+    if (haveClasses)
+        for (uint32_t r = 0; r < classes.records; ++r) {
+            const uint32_t id = classes.u32(r, 0);
+            if (id && !classes.loc(r, dbc335a::chrClasses::Name).empty() &&
+                classes.u32(r, dbc335a::chrClasses::RequiredExpansion) <= 2)
+                playableClasses.insert(id);
+        }
     if (so.load(data, "CharStartOutfit.dbc") && so.fields >= 8 && (so.fields - 2) % 3 == 0) {
         const uint32_t n = (so.fields - 2) / 3;
+        std::set<std::pair<uint32_t, uint32_t>> combos;
         for (uint32_t r = 0; r < so.records; ++r) {
             const uint32_t rcs = so.u32(r, 1);
             const uint32_t race = rcs & 0xFF, cls = (rcs >> 8) & 0xFF, sex = (rcs >> 16) & 0xFF;
             if (!race || !cls || sex > 1) continue;
+            if (haveRaces && !playableRaces.count(race)) continue;
+            if (haveClasses && !playableClasses.count(cls)) continue;
+            if (combos.insert({race, cls}).second) {
+                out += "A\t" + std::to_string(race) + "\t" + std::to_string(cls) + "\n";
+                ++na;
+            }
             std::string l = "O\t" + std::to_string(race) + "\t" + std::to_string(cls) + "\t" + std::to_string(sex);
             int any = 0;
             for (uint32_t k = 0; k < n; ++k) {
@@ -451,32 +480,16 @@ bool exportGlueTexts(const DataDir& data, const std::string& path, bool verbose)
     } else if (verbose) {
         std::fprintf(stderr, "glue: CharStartOutfit.dbc not found (new characters are shown without clothes)\n");
     }
-    // ---- AreaTable.dbc: ID, map, parent, ... name (the column with the most names, 8..16)
+    // ---- AreaTable.dbc: localized names are columns 11..26 in WotLK 3.3.5a.
     DbcTable at;
-    if (at.load(data, "AreaTable.dbc") && at.fields > 12) {
-        uint32_t best = 0, bestCount = 0;
-        // a name column: offsets at the start of a string (the byte before is 0), many different names (a small
-        // number column such as the exploration level would point into the table at the same few strings)
-        const size_t base = 20 + (size_t)at.records * at.recSize;
-        for (uint32_t c = 8; c < std::min<uint32_t>(at.fields, 17); ++c) {
-            std::set<std::string> names;
-            bool starts = true;
-            for (uint32_t r = 0; r < at.records && r < 400 && starts; ++r) {
-                const uint32_t off = at.u32(r, c);
-                if (off == 0) continue;
-                if (off >= at.strSize || at.b[base + off - 1] != 0) starts = false;
-                std::string v = at.str(r, c);
-                if (v.size() >= 3 && std::isupper((unsigned char)v[0])) names.insert(v);
-            }
-            if (starts && names.size() > bestCount) { bestCount = (uint32_t)names.size(); best = c; }
+    if (at.load(data, "AreaTable.dbc") && at.fields > dbc335a::area::Name + 15) {
+        for (uint32_t r = 0; r < at.records; ++r) {
+            std::string v = clean(at.loc(r, dbc335a::area::Name));
+            if (v.empty()) continue;
+            out += "Z\t" + std::to_string(at.u32(r, 0)) + "\t" + v + "\t" +
+                   std::to_string(at.u32(r, dbc335a::area::ParentAreaID)) + "\n";
+            ++nz;
         }
-        if (best)
-            for (uint32_t r = 0; r < at.records; ++r) {
-                std::string v = clean(at.loc(r, best, 8));   // 7.14: best is the English column; +locale inside loc()
-                if (v.empty()) continue;
-                out += "Z\t" + std::to_string(at.u32(r, 0)) + "\t" + v + "\t" + std::to_string(at.u32(r, 2)) + "\n";   // + the parent zone (0 = a zone)
-                ++nz;
-            }
     }
     if (!writeText(path, out)) return false;
     std::printf("  glue: %zu strings, %zu start outfits, %zu zone names written to %s\n", nt, no, nz, path.c_str());
@@ -514,7 +527,8 @@ bool exportEmotes(const DataDir& data, const std::string& path, bool verbose) {
 //   B params skybox                  6.61: the LightSkybox id of a parameter set (SKYB entry in the pool; absent: no sky model)
 bool exportSky(const DataDir& data, const std::string& path, bool verbose) {
     DbcTable light, ib;
-    if (!light.load(data, "Light.dbc") || light.fields < 8 || !ib.load(data, "LightIntBand.dbc") || ib.fields < 34) {
+    if (!light.load(data, "Light.dbc") || light.fields <= dbc335a::light::LightParamsID + 2 ||
+        !ib.load(data, "LightIntBand.dbc") || ib.fields < 34) {
         std::fprintf(stderr, "sky: Light.dbc / LightIntBand.dbc not found (no sky.txt: the 3DS draws one fixed sky)\n");
         return false;
     }
@@ -526,12 +540,16 @@ bool exportSky(const DataDir& data, const std::string& path, bool verbose) {
     size_t nl = 0;
     char buf[160];
     for (uint32_t r = 0; r < light.records; ++r) {
-        const uint32_t params = light.u32(r, 7);
+        const uint32_t params = light.u32(r, dbc335a::light::LightParamsID);
         if (!params) continue;
-        float x = zp - light.f32(r, 4) / 36.0f, y = zp - light.f32(r, 2) / 36.0f;
-        float inner = light.f32(r, 5) / 36.0f, outer = light.f32(r, 6) / 36.0f;
-        if (light.f32(r, 2) == 0 && light.f32(r, 4) == 0 && outer <= 0) { x = y = 0; inner = outer = 0; }   // the map's global light
-        std::snprintf(buf, sizeof buf, "L\t%u\t%.1f\t%.1f\t%.1f\t%.1f\t%u\n", light.u32(r, 1), x, y, inner, outer, params);
+        const float gx = light.f32(r, dbc335a::light::GameCoords);
+        const float gz = light.f32(r, dbc335a::light::GameCoords + 2);
+        float x = zp - gz / 36.0f, y = zp - gx / 36.0f;
+        float inner = light.f32(r, dbc335a::light::FalloffStart) / 36.0f;
+        float outer = light.f32(r, dbc335a::light::FalloffEnd) / 36.0f;
+        if (gx == 0 && gz == 0 && outer <= 0) { x = y = 0; inner = outer = 0; }
+        std::snprintf(buf, sizeof buf, "L\t%u\t%.1f\t%.1f\t%.1f\t%.1f\t%u\n",
+                      light.u32(r, dbc335a::light::ContinentID), x, y, inner, outer, params);
         out += buf;
         used.insert(params);
         ++nl;

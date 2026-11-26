@@ -20,8 +20,8 @@ CreatureWeapon weaponFromSubclass(uint32_t cls, uint32_t sub) {
 namespace {
 constexpr uint32_t kInCombat = 0x80000, kStunned = 0x40000;
 
-// class / subclass of equipment slot 'slot' (15 main hand, 17 ranged): players show item entries, creatures carry
-// class and subclass in UNIT_VIRTUAL_ITEM_INFO (main hand, off hand, ranged).
+// class / subclass of equipment slot 'slot' (15 main hand, 17 ranged): players show item entries; 3.3.5a
+// exposes only virtual-item display IDs for creatures, so use the matching weapon fallback when item data is absent.
 bool itemOf(GameSession& g, const WorldObject& o, int slot, uint32_t* cls, uint32_t* sub) {
     if (o.type == ObjType::Player) {
         const uint32_t entry = o.field((uint16_t)(UF::PLAYER_VISIBLE_ITEM_1_0 + slot * UF::PLAYER_VISIBLE_ITEM_STRIDE));
@@ -33,10 +33,9 @@ bool itemOf(GameSession& g, const WorldObject& o, int slot, uint32_t* cls, uint3
         return true;
     }
     const int v = slot == 15 ? 0 : slot == 16 ? 1 : 2;
-    const uint32_t info = o.field((uint16_t)(UF::UNIT_VIRTUAL_ITEM_INFO + v * 2));
-    if (!info) return false;
-    *cls = info & 0xFF;
-    *sub = (info >> 8) & 0xFF;
+    if (!o.field((uint16_t)(UF::UNIT_VIRTUAL_ITEM_SLOT_DISPLAY + v))) return false;
+    *cls = 2;
+    *sub = slot == 17 ? 2 : 7;
     return true;
 }
 
@@ -101,8 +100,9 @@ void fillEquipment(GameSession& g, const WorldObject& o, CreatureSeen& c) {
     }
     static const int kSlot[3] = {W3D_EQ_MAINHAND, W3D_EQ_OFFHAND, W3D_EQ_RANGED};   // UNIT_VIRTUAL_ITEM slots
     for (int v = 0; v < 3; ++v) {
-        c.equip[kSlot[v]] = o.field((uint16_t)(UF::UNIT_VIRTUAL_ITEM_SLOT_DISPLAY + v));
-        c.equipInv[kSlot[v]] = (uint8_t)(o.field((uint16_t)(UF::UNIT_VIRTUAL_ITEM_INFO + v * 2 + 1)) & 0xFF);
+        const uint32_t display = o.field((uint16_t)(UF::UNIT_VIRTUAL_ITEM_SLOT_DISPLAY + v));
+        c.equip[kSlot[v]] = display;
+        if (display) c.equipInv[kSlot[v]] = v == 2 ? 15 : 13;
     }
 }
 }  // namespace
@@ -201,7 +201,7 @@ bool fillCorpse(const WorldObject& o, CreatureSeen& c) {
     l.hairStyle = (uint8_t)((b2 >> 8) & 0xFF);
     l.hairColor = (uint8_t)((b2 >> 16) & 0xFF);
     l.facialHair = (uint8_t)((b2 >> 24) & 0xFF);
-    if (!l.race || l.race > 10) return false;   // the eight races of 1.12 and the two of Turtle WoW
+    if (!l.race || l.race > 11 || l.race == 9) return false;
     c.lookParts = l;
     c.look = w3d_look_key(&c.lookParts);
     c.displayId = o.corpseDisplay();

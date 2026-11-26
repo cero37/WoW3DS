@@ -983,6 +983,18 @@ void GameUi::drawTalents(w3n::GameSession& g, const Input& in) {
     // the selected talent
     const int ix = 136, iw = kTouchW - ix - 4;
     window(ix, gy - 2, iw, kTabY - gy - 2);
+    list_.text(ix + 6, kTabY - 65, tr("Glyphs", "Символы"), kGold, true, Font::Small);
+    const w3n::WorldObject* me = g.selfObject();
+    for (int i = 0; i < 6; ++i) {
+        const uint32_t id = me ? me->field((uint16_t)(w3n::UF::PLAYER_FIELD_GLYPHS + i)) : 0;
+        const int x = ix + 6 + i * 22, y = kTabY - 49;
+        list_.rect(x, y, 18, 18, id ? kRowAlt : kRow);
+        const uint32_t spell = g.talents.glyphSpell(id);
+        ui::Image icon = spell ? ui::assets().spellIcon(spell) : ui::Image();
+        if (icon.ok()) list_.image(x + 1, y + 1, 16, 16, icon);
+        else if (id) list_.textCentered(x + 9, y + 4, std::to_string(id % 100), kText, false, Font::Small);
+        list_.outline(x, y, 18, 18, id ? kGold : kGrey);
+    }
     if (!sel) {
         list_.text(ix + 6, gy + 6, tr("Tap a talent.", "Выберите талант."), kGrey, true, Font::Normal);
         return;
@@ -1006,7 +1018,7 @@ void GameUi::drawTalents(w3n::GameSession& g, const Input& in) {
     {   // 6.20: what the current rank does (rank 1 when none is learned yet), then the next rank's text
         const std::string d = g.spellDesc.text(shown);
         for (const std::string& l : HudList::wrap(d, iw - 12, Font::Small)) {
-            if (ty + 10 > kTabY - 50) break;
+            if (ty + 10 > kTabY - 66) break;
             list_.text(ix + 6, ty, l, kText, false, Font::Small);
             ty += HudList::lineHeight(Font::Small);
         }
@@ -1017,7 +1029,7 @@ void GameUi::drawTalents(w3n::GameSession& g, const Input& in) {
         ty += 12;
         const std::string d = rank > 0 ? g.spellDesc.text(sel->rankSpell[rank]) : std::string();
         for (const std::string& l : HudList::wrap(d, iw - 12, Font::Small)) {
-            if (ty + 10 > kTabY - 34) break;
+            if (ty + 10 > kTabY - 66) break;
             list_.text(ix + 6, ty, l, kGrey, false, Font::Small);
             ty += HudList::lineHeight(Font::Small);
         }

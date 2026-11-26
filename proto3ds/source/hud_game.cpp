@@ -44,6 +44,8 @@ uint32_t powerColor(uint8_t type) {
         case 1: return hudRgba(215, 40, 40);     // rage
         case 2: return hudRgba(215, 130, 40);    // focus
         case 3: return hudRgba(235, 225, 40);    // energy
+        case 4: return hudRgba(80, 210, 80);     // happiness
+        case 6: return hudRgba(80, 190, 245);    // runic power
         default: return hudRgba(40, 80, 235);    // mana
     }
 }
@@ -60,10 +62,11 @@ struct Power { uint8_t type; uint32_t cur, max; };
 Power powerOf(const WorldObject& o) {
     Power p{0, 0, 0};
     p.type = (uint8_t)((o.field(w3n::UF::UNIT_BYTES_0) >> 24) & 0xFF);
-    if (p.type > 3) p.type = 0;
+    if (p.type > 6) p.type = 0;
     p.cur = o.field(w3n::UF::UNIT_POWER1 + p.type);
     p.max = o.field(w3n::UF::UNIT_MAXPOWER1 + p.type);
     if (p.type == 1) { p.cur /= 10; p.max /= 10; }
+    if (p.type == 5) p.max = 0;
     return p;
 }
 
@@ -748,6 +751,22 @@ void hudBuildGame(HudList& l, const HudInput& in) {
     l.fade = rest ? 150 : 255;
     if (me) {
         unitFrame(l, in, *me, true, kPlayerFrameX, kFrameY);
+        for (size_t i = 0; i < g.runes.size(); ++i) {
+            const w3n::GameSession::RuneState& rune = g.runes[i];
+            if (!rune.seen) continue;
+            const int x = 4 + (int)i * 20, y = kFrameY + (int)(100 * kFrameScale) + 20;
+            const uint32_t color = rune.type == 0 ? hudRgba(190, 55, 55) :
+                                   rune.type == 1 ? hudRgba(80, 175, 75) :
+                                   rune.type == 2 ? hudRgba(70, 145, 220) : hudRgba(205, 190, 100);
+            l.rect(x, y, 17, 8, hudRgba(0, 0, 0, 190));
+            const int fill = (int)(15u * rune.progress / 255u);
+            if (fill) l.rect(x + 1, y + 1, fill, 6, color);
+            if (g.runePowerMs && in.nowMs - g.runePowerMs < 700 && (g.runePowerMask & (1u << i)))
+                l.outline(x - 1, y - 1, 19, 10, hudRgba(255, 230, 90));
+            l.outline(x, y, 17, 8, kBorder);
+            static const char* labels[4] = {"B", "U", "F", "D"};
+            l.textCentered(x + 8, y - 1, labels[rune.type], kWhite, false, ui::Font::Small);
+        }
         std::vector<w3n::AuraView> av = g.auras(*me, now);
         std::stable_sort(av.begin(), av.end(), [](const w3n::AuraView& a, const w3n::AuraView& b) { return a.debuff > b.debuff; });
         for (size_t i = 0; i < av.size() && i < 8; ++i) {

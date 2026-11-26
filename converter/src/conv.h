@@ -112,11 +112,10 @@ struct Options {
     bool verbose = false;
 };
 
-// ------------------------------------------------------------ game language (7.14)
-// The 1.12 DBC text blocks have eight columns in this order (enUS first); ruRU fan clients replace the English column,
-// enGB is English. --locale picks the column and the Data/<locale>/ MPQ archives.
-int gameLocaleIndex();                 // 0..7 DBC column offset, 0 = English
-const std::string& gameLocaleDir();    // "enUS", "esES", ... ("" / "auto": load every locale archive)
+// ------------------------------------------------------------ game language (WotLK 3.3.5a)
+// Localized DBC fields have 16 columns; esMX is WotLK locale index 7.
+int gameLocaleIndex();                 // 0..10 DBC column offset, 0 = English
+const std::string& gameLocaleDir();    // "enUS", "esES", "esMX", ... ("" / "auto": load every locale archive)
 void setGameLocale(const std::string& code);   // "esES", "deDE", "ruRU", ...; unknown -> English with a warning
 
 // ------------------------------------------------------------ pack writer
@@ -399,9 +398,48 @@ struct DbcTable {
     uint32_t u32(uint32_t r, uint32_t f) const;
     float f32(uint32_t r, uint32_t f) const;
     std::string str(uint32_t r, uint32_t f) const;
-    // 7.14: a localized string group: the selected language's column, else the first non-empty one (English is base 0).
-    std::string loc(uint32_t r, uint32_t base, uint32_t count = 8) const;
+    // A WotLK localized string group: selected language, else the first non-empty one.
+    std::string loc(uint32_t r, uint32_t base, uint32_t count = 16) const;
 };
+
+namespace dbc335a {
+namespace spell {
+constexpr uint32_t Category = 1, Attributes = 4, AttributesExB = 6, ProcChance = 35, ProcCharges = 36;
+constexpr uint32_t MaxLevel = 37, BaseLevel = 38, SpellLevel = 39, DurationIndex = 40, RangeIndex = 46;
+constexpr uint32_t Speed = 47, Totem = 50, Reagent = 52, ReagentCount = 60, EquippedItemClass = 68;
+constexpr uint32_t EquippedItemSubclass = 69, EquippedItemInvTypes = 70, Effect = 71, EffectDieSides = 74;
+constexpr uint32_t EffectRealPointsPerLevel = 77, EffectBasePoints = 80, EffectImplicitTargetA = 86;
+constexpr uint32_t EffectImplicitTargetB = 89, EffectRadiusIndex = 92, EffectAmplitude = 98;
+constexpr uint32_t EffectChainTargets = 104, EffectItemType = 107, EffectMiscValue = 110;
+constexpr uint32_t EffectTriggerSpell = 116, EffectPointsPerCombo = 119, SpellVisualID = 131;
+constexpr uint32_t SpellIconID = 133, Name = 136, NameSubtext = 153, Description = 170;
+constexpr uint32_t AuraDescription = 187, RecoveryTime = 29, CategoryRecoveryTime = 30;
+constexpr uint32_t MaxTargets = 212, SchoolMask = 225;
+}  // namespace spell
+namespace area {
+constexpr uint32_t ContinentID = 1, ParentAreaID = 2, AmbienceID = 7, ZoneMusic = 8, Name = 11;
+}  // namespace area
+namespace map {
+constexpr uint32_t Directory = 1, InstanceType = 2, Name = 5, AreaTableID = 22, LoadingScreenID = 57;
+}  // namespace map
+namespace creatureDisplayInfo {
+constexpr uint32_t ModelID = 1, ExtendedDisplayInfoID = 3, Scale = 4;
+}  // namespace creatureDisplayInfo
+namespace itemDisplayInfo {
+constexpr uint32_t ModelName = 1, ModelTexture = 3, InventoryIcon = 5, GeosetGroup = 7;
+constexpr uint32_t HelmetGeosetVisID = 13, Texture = 15;
+}  // namespace itemDisplayInfo
+namespace chrRaces {
+constexpr uint32_t Flags = 1, ClientPrefix = 6, RequiredExpansion = 68;
+constexpr uint32_t NotPlayable = 0x01;
+}  // namespace chrRaces
+namespace chrClasses {
+constexpr uint32_t Name = 4, SpellClassSet = 56, RequiredExpansion = 59;
+}  // namespace chrClasses
+namespace light {
+constexpr uint32_t ContinentID = 1, GameCoords = 2, FalloffStart = 5, FalloffEnd = 6, LightParamsID = 7;
+}  // namespace light
+}  // namespace dbc335a
 
 // Spell names for the action bar of the 3DS client: spells.txt ("id<TAB>name<TAB>rank" lines, stage 5.8).
 // 7.16: which game languages the client really has (non-empty / translated Spell.dbc text columns;

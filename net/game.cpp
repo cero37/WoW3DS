@@ -9,6 +9,9 @@ namespace {
 enum : uint16_t {
     SMSG_NEW_WORLD = 0x03E, SMSG_TRANSFER_PENDING = 0x03F,
     SMSG_LOGIN_SETTIMESPEED = 0x042, SMSG_GAMETIME_UPDATE = 0x043, SMSG_GAMETIME_SET = 0x045, SMSG_GAMESPEED_SET = 0x047,
+    SMSG_ACCOUNT_DATA_TIMES = 0x209, SMSG_LOGIN_VERIFY_WORLD = 0x236, SMSG_FEATURE_SYSTEM_STATUS = 0x33C,
+    SMSG_TUTORIAL_FLAGS = 0x0FD, CMSG_READY_FOR_ACCOUNT_DATA_TIMES = 0x4FF,
+    SMSG_CONVERT_RUNE = 0x486, SMSG_RESYNC_RUNES = 0x487, SMSG_ADD_RUNE_POWER = 0x488,
     SMSG_FORCE_RUN_SPEED_CHANGE = 0x0E2, CMSG_FORCE_RUN_SPEED_CHANGE_ACK = 0x0E3,
     SMSG_FORCE_RUN_BACK_SPEED_CHANGE = 0x0E4, CMSG_FORCE_RUN_BACK_SPEED_CHANGE_ACK = 0x0E5,
     SMSG_FORCE_SWIM_SPEED_CHANGE = 0x0E6, CMSG_FORCE_SWIM_SPEED_CHANGE_ACK = 0x0E7,
@@ -16,22 +19,18 @@ enum : uint16_t {
     SMSG_FORCE_MOVE_UNROOT = 0x0EA, CMSG_FORCE_MOVE_UNROOT_ACK = 0x0EB,
     SMSG_FORCE_WALK_SPEED_CHANGE = 0x2DA, CMSG_FORCE_WALK_SPEED_CHANGE_ACK = 0x2DB,
     SMSG_FORCE_SWIM_BACK_SPEED_CHANGE = 0x2DC, CMSG_FORCE_SWIM_BACK_SPEED_CHANGE_ACK = 0x2DD,
+    SMSG_FORCE_FLIGHT_SPEED_CHANGE = 0x381, CMSG_FORCE_FLIGHT_SPEED_CHANGE_ACK = 0x382,
+    SMSG_FORCE_FLIGHT_BACK_SPEED_CHANGE = 0x383, CMSG_FORCE_FLIGHT_BACK_SPEED_CHANGE_ACK = 0x384,
     // The client names the unit it moves. vMaNGOS-family cores ignore every movement packet until it
     // arrives (Player::GetConfirmedMover: "no mover client side, is this a fake client?"); the real
     // client sends it on entering the world and after every map change (WoWee does the same).
     CMSG_SET_ACTIVE_MOVER = 0x26A,
-    // 7.20: the ack the 1.12 server waits for after a spline it started on us (Charge, knockback). Until it arrives
+    // The server waits for this ack after a spline it started on us (Charge, knockback). Until it arrives
     // vMaNGOS ignores every movement packet (Unit::HasPendingSplineDone), so the player stays where the spline began
     // server-side: no attack lands (out of range), no new objects come in, and a relog puts us back at that spot.
     CMSG_MOVE_SPLINE_DONE = 0x2C9,
 };
 
-// Forced-movement packets start with the player's GUID, packed on vMaNGOS/CMaNGOS
-// and a full u64 in some cores; the packet size tells which (rest = 'tail' bytes).
-uint64_t readGuidBySize(Reader& r, size_t tail) {
-    if (r.left() == 8 + tail) return r.u64();
-    return r.packedGuid();
-}
 }  // namespace
 
 void GameSession::attach(WorldClient& wc, uint32_t nowMs) {
@@ -49,7 +48,6 @@ void GameSession::attach(WorldClient& wc, uint32_t nowMs) {
     now_ = nowMs;
     objects.clear();
     objects.setSelf(self_);
-    objects.turtle = wc.version().minor >= 13;   // 6.58: a Turtle WoW clone's server (1.18.1 login): its movement layouts
     askedNames_.clear();
     askedCreatures_.clear();
     askedGos_.clear();
@@ -90,7 +88,6 @@ void GameSession::attach(WorldClient& wc, uint32_t nowMs) {
     cast = CastState();
     cooldownEnd_.clear();
     unitCasts_.clear();
-    auraTime_ = {};
     gcdEnd_ = 0;
     lastCastFail = 0xFFFFFFFFu;
     rep = ReputationState();   // the faction table (factions.txt) stays: static data
@@ -128,11 +125,15 @@ void GameSession::attach(WorldClient& wc, uint32_t nowMs) {
     envDamageTaken = lastEnvDamageMs = 0;
     fishBiteMs = 0;
     fishBiteGuid = 0;
+    runes = {};
+    runePowerMask = runePowerMs = 0;
     const float* p = wc.position();
     mover = Mover();   // a new session: default speeds, no water walking / walk mode from the last one
+    mover.setGuid(self_);
     mover.reset(p[0], p[1], p[2], wc.orientation(), nowMs);
     wc.onPacket = [this](const Packet& pk) { handle(pk.opcode, pk.data, now_); };
     sendActiveMover(nowMs);
+    send(CMSG_READY_FOR_ACCOUNT_DATA_TIMES, {}, nowMs);
 }
 
 const WorldObject* GameSession::selfObject() const {
@@ -244,9 +245,9 @@ void GameSession::endSelfServerMove(const float pos[3], float yaw, uint32_t nowM
     if (me) me->pathSplineId = 0;
     if (!taxi && splineId) {
         Writer w;
+        w.packedGuid(self_);
         writeMovementInfo(w, mover.snapshot(nowMs));
         w.u32(splineId);
-        w.f32(0.0f);   // the stock 1.12 client sends a float after the id; the server reads past it
         send(CMSG_MOVE_SPLINE_DONE, w.b, nowMs);
     }
 }
@@ -269,7 +270,7 @@ bool GameSession::takeTransportSpawn(TransportSpawn* out) {
 
 void GameSession::ackForced(uint16_t ackOp, uint64_t guid, uint32_t counter, uint32_t nowMs, const float* speed) {
     Writer w;
-    w.u64(guid);
+    w.packedGuid(guid);
     w.u32(counter);
     writeMovementInfo(w, mover.snapshot(nowMs));
     if (speed) w.f32(*speed);
@@ -319,24 +320,56 @@ bool GameSession::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
     }
     Reader r(data);
     switch (op) {
+        case SMSG_CONVERT_RUNE: {
+            const uint8_t slot = r.u8(), type = r.u8();
+            if (!r.bad && slot < runes.size() && type <= 3) {
+                runes[slot].type = type;
+                runes[slot].seen = true;
+            }
+            return true;
+        }
+        case SMSG_RESYNC_RUNES: {
+            const uint32_t count = r.u32();
+            if (r.bad || count > runes.size() || r.left() < count * 2u) return true;
+            std::array<RuneState, 6> updated{};
+            for (uint32_t i = 0; i < count; ++i) {
+                updated[i].type = r.u8();
+                updated[i].progress = r.u8();
+                updated[i].seen = updated[i].type <= 3;
+            }
+            if (!r.bad) runes = updated;
+            return true;
+        }
+        case SMSG_ADD_RUNE_POWER:
+            runePowerMask = r.u32();
+            runePowerMs = r.bad ? 0 : nowMs;
+            return true;
+        case SMSG_ACCOUNT_DATA_TIMES: {
+            r.u32();
+            r.u8();
+            const uint32_t mask = r.u32();
+            for (uint32_t i = 0; i < 8; ++i)
+                if (mask & (1u << i)) r.u32();
+            return true;
+        }
+        case SMSG_TUTORIAL_FLAGS:
+            for (int i = 0; i < 8; ++i) r.u32();
+            return true;
+        case SMSG_FEATURE_SYSTEM_STATUS:
+        case SMSG_LOGIN_VERIFY_WORLD:
+            return true;
         case MoveOp::TeleportAck: {   // server-initiated teleport within the map
             uint64_t g = r.packedGuid();
             uint32_t counter = r.u32();
             MovementInfo m;
-            const size_t movementStart = r.pos;
-            if (objects.turtle) {
-                if (!readMovementInfo(r, m, true) || r.left() != 0) {
-                    r.pos = movementStart; r.bad = false; m = MovementInfo{};
-                    if (!readMovementInfo(r, m)) return true;
-                }
-            } else if (!readMovementInfo(r, m)) return true;
+            if (!readMovementInfo(r, m)) return true;
             if (g != self_) {
                 if (WorldObject* o = objects.find(g)) { o->mv = m; o->posMs = nowMs; o->pathActive = false; }
                 return true;
             }
             mover.reset(m.x, m.y, m.z, m.o, nowMs);
             Writer w;
-            w.u64(self_);
+            w.packedGuid(self_);
             w.u32(counter);
             w.u32(nowMs);
             send(MoveOp::TeleportAck, w.b, nowMs);
@@ -423,9 +456,12 @@ bool GameSession::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
         case SMSG_FORCE_RUN_BACK_SPEED_CHANGE:
         case SMSG_FORCE_SWIM_SPEED_CHANGE:
         case SMSG_FORCE_WALK_SPEED_CHANGE:
-        case SMSG_FORCE_SWIM_BACK_SPEED_CHANGE: {
-            uint64_t g = readGuidBySize(r, 8);
+        case SMSG_FORCE_SWIM_BACK_SPEED_CHANGE:
+        case SMSG_FORCE_FLIGHT_SPEED_CHANGE:
+        case SMSG_FORCE_FLIGHT_BACK_SPEED_CHANGE: {
+            uint64_t g = r.packedGuid();
             uint32_t counter = r.u32();
+            if (op == SMSG_FORCE_RUN_SPEED_CHANGE) r.u8();
             float speed = r.f32();
             if (r.bad || !(speed > 0.1f && speed < 100.0f)) return true;
             if (g != self_) return true;
@@ -436,7 +472,9 @@ bool GameSession::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
                 case SMSG_FORCE_RUN_BACK_SPEED_CHANGE: s.runBack = speed; ack = CMSG_FORCE_RUN_BACK_SPEED_CHANGE_ACK; break;
                 case SMSG_FORCE_SWIM_SPEED_CHANGE: s.swim = speed; ack = CMSG_FORCE_SWIM_SPEED_CHANGE_ACK; break;
                 case SMSG_FORCE_WALK_SPEED_CHANGE: s.walk = speed; ack = CMSG_FORCE_WALK_SPEED_CHANGE_ACK; break;
-                default: s.swimBack = speed; ack = CMSG_FORCE_SWIM_BACK_SPEED_CHANGE_ACK; break;
+                case SMSG_FORCE_SWIM_BACK_SPEED_CHANGE: s.swimBack = speed; ack = CMSG_FORCE_SWIM_BACK_SPEED_CHANGE_ACK; break;
+                case SMSG_FORCE_FLIGHT_SPEED_CHANGE: s.flight = speed; ack = CMSG_FORCE_FLIGHT_SPEED_CHANGE_ACK; break;
+                default: s.flightBack = speed; ack = CMSG_FORCE_FLIGHT_BACK_SPEED_CHANGE_ACK; break;
             }
             ackForced(ack, self_, counter, nowMs, &speed);
             ++stats.speedChanges;
@@ -444,7 +482,7 @@ bool GameSession::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
         }
         case SMSG_FORCE_MOVE_ROOT:
         case SMSG_FORCE_MOVE_UNROOT: {
-            uint64_t g = readGuidBySize(r, 4);
+            uint64_t g = r.packedGuid();
             uint32_t counter = r.u32();
             if (r.bad || g != self_) return true;
             bool root = op == SMSG_FORCE_MOVE_ROOT;

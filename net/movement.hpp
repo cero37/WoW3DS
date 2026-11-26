@@ -1,14 +1,14 @@
-// movement.hpp — vanilla 1.12.1 MovementInfo and the client-side mover that
+// movement.hpp — WotLK 3.3.5a MovementInfo and the client-side mover that
 // turns "where I am / which keys are held" into MSG_MOVE_* packets the way the
 // stock client does (start/stop on key changes, heartbeat every 500 ms while
 // moving, SET_FACING when turning).
 //
-// Wire layout (vMaNGOS MovementInfo::Write, WoWee ClassicPacketParsers):
-//   u32 flags, u32 time, f32 x, y, z, o,
-//   [ONTRANSPORT: FULL u64 guid, f32 x, y, z, o], [SWIMMING: f32 pitch], u32 fallTime,
-//   [JUMPING: f32 zspeed, sin, cos, xyspeed], [SPLINE_ELEVATION: f32]
-// Client -> server movement packets carry no GUID prefix in vanilla; the
-// server relays other players' movement as packed guid + MovementInfo.
+// Wire layout (TrinityCore/AzerothCore 3.3.5a):
+//   u32 flags, u16 extraFlags, u32 time, f32 x, y, z, o,
+//   [ONTRANSPORT: packed guid, f32 x, y, z, o, u32 time, i8 seat, [u32 time2]],
+//   [SWIMMING|FLYING|ALWAYS_ALLOW_PITCHING: f32 pitch], u32 fallTime,
+//   [FALLING: f32 zspeed, sin, cos, xyspeed], [SPLINE_ELEVATION: f32]
+// Movement packets include the mover's packed GUID before MovementInfo.
 #pragma once
 #include <cstdint>
 #include <vector>
@@ -21,16 +21,24 @@ namespace MoveFlag {
 enum : uint32_t {
     Forward = 0x1, Backward = 0x2, StrafeLeft = 0x4, StrafeRight = 0x8,
     TurnLeft = 0x10, TurnRight = 0x20, PitchUp = 0x40, PitchDown = 0x80,
-    WalkMode = 0x100, Levitating = 0x400, FixedZ = 0x800, Root = 0x1000,
-    Jumping = 0x2000, FallingFar = 0x4000, Swimming = 0x200000, SplineEnabled = 0x400000,
-    CanFly = 0x800000, Flying = 0x1000000, OnTransport = 0x2000000, SplineElevation = 0x4000000,
+    WalkMode = 0x100, OnTransport = 0x200, Levitating = 0x400, Root = 0x800,
+    Falling = 0x1000, Jumping = Falling, FallingFar = 0x2000, Swimming = 0x200000, Ascending = 0x400000,
+    Descending = 0x800000, CanFly = 0x1000000, Flying = 0x2000000,
+    SplineElevation = 0x4000000, SplineEnabled = 0x8000000,
     WaterWalking = 0x10000000, SafeFall = 0x20000000, Hover = 0x40000000,
     MaskMoving = Forward | Backward | StrafeLeft | StrafeRight,
     MaskTurning = TurnLeft | TurnRight,
 };
 }
 
-// Vanilla opcodes used for movement (WoWee Data/expansions/classic/opcodes.json).
+namespace MoveExtraFlag {
+enum : uint16_t {
+    AlwaysAllowPitching = 0x0020,
+    InterpolatedMovement = 0x0400,
+};
+}
+
+// WotLK 3.3.5a movement opcodes.
 namespace MoveOp {
 enum : uint16_t {
     StartForward = 0x0B5, StartBackward = 0x0B6, Stop = 0x0B7, StartStrafeLeft = 0x0B8, StartStrafeRight = 0x0B9,
@@ -47,9 +55,12 @@ const char* name(uint16_t op);
 
 struct MovementInfo {
     uint32_t flags = 0, time = 0;
+    uint16_t extraFlags = 0;
     float x = 0, y = 0, z = 0, o = 0;
     uint64_t transportGuid = 0;
     float tx = 0, ty = 0, tz = 0, to = 0;
+    uint32_t transportTime = 0, transportTime2 = 0;
+    int8_t transportSeat = -1;
     float pitch = 0;
     uint32_t fallTime = 0;
     float jumpZSpeed = 0, jumpSin = 0, jumpCos = 0, jumpXYSpeed = 0;
@@ -57,11 +68,11 @@ struct MovementInfo {
 };
 
 void writeMovementInfo(Writer& w, const MovementInfo& m);
-// Turtle's incoming layout uses a packed transport GUID plus transport time; Vanilla does not.
-bool readMovementInfo(Reader& r, MovementInfo& m, bool turtleTransport = false);
+bool readMovementInfo(Reader& r, MovementInfo& m);
 
 struct MoveSpeeds {
     float walk = 2.5f, run = 7.0f, runBack = 4.5f, swim = 4.722222f, swimBack = 2.5f, turn = 3.141594f;
+    float flight = 7.0f, flightBack = 4.5f, pitch = 3.141594f;
     // Ground speed for a set of movement flags (backward wins over forward, as in the client).
     float forFlags(uint32_t flags) const;
 };
@@ -76,6 +87,7 @@ struct OutPacket {
 // height) and must move the player at speeds.forFlags(flags) or less.
 class Mover {
 public:
+    void setGuid(uint64_t guid) { guid_ = guid; }
     void reset(float x, float y, float z, float o, uint32_t nowMs);
     // dirFlags: any of Forward/Backward/StrafeLeft/StrafeRight (others ignored).
     void update(uint32_t dirFlags, float x, float y, float z, float o, uint32_t nowMs);
@@ -132,6 +144,7 @@ public:
 private:
     void emit(uint16_t op, uint32_t nowMs);
     MovementInfo m_;
+    uint64_t guid_ = 0;
     uint32_t lastSendMs_ = 0, jumpStartMs_ = 0;
     float lastSentO_ = 0, lastSentZ_ = 0, lastSentPitch_ = 0;
     std::vector<OutPacket> out_;

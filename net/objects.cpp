@@ -9,17 +9,20 @@ namespace w3n {
 
 namespace {
 
-// Classic UpdateFlags (u8). 1.12 values: these differ from TBC/WotLK (see WoWee comments).
-enum : uint8_t {
-    UPDATEFLAG_SELF = 0x01, UPDATEFLAG_TRANSPORT = 0x02, UPDATEFLAG_MELEE_ATTACKING = 0x04,
-    UPDATEFLAG_HIGHGUID = 0x08, UPDATEFLAG_ALL = 0x10, UPDATEFLAG_LIVING = 0x20, UPDATEFLAG_HAS_POSITION = 0x40,
+// WotLK 3.3.5a UpdateFlags (u16).
+enum : uint16_t {
+    UPDATEFLAG_SELF = 0x0001, UPDATEFLAG_TRANSPORT = 0x0002, UPDATEFLAG_HAS_TARGET = 0x0004,
+    UPDATEFLAG_UNKNOWN = 0x0008, UPDATEFLAG_LOWGUID = 0x0010, UPDATEFLAG_LIVING = 0x0020,
+    UPDATEFLAG_STATIONARY_POSITION = 0x0040, UPDATEFLAG_VEHICLE = 0x0080, UPDATEFLAG_POSITION = 0x0100,
+    UPDATEFLAG_ROTATION = 0x0200,
 };
 enum : uint8_t { UPD_VALUES = 0, UPD_MOVEMENT = 1, UPD_CREATE = 2, UPD_CREATE2 = 3, UPD_OUT_OF_RANGE = 4, UPD_NEAR = 5 };
-// Pre-WotLK spline flags.
+// WotLK MoveSplineFlag values.
 enum : uint32_t {
-    SPLINE_FLYING = 0x00000200, SPLINE_FINAL_POINT = 0x00010000, SPLINE_FINAL_TARGET = 0x00020000,
-    SPLINE_FINAL_ANGLE = 0x00040000, SPLINE_CATMULLROM = 0x00080000, SPLINE_CYCLIC = 0x00100000,
-    SPLINE_ENTER_CYCLE = 0x00200000,
+    SPLINE_FALLING = 0x00000200, SPLINE_PARABOLIC = 0x00000800, SPLINE_FLYING = 0x00002000,
+    SPLINE_FINAL_POINT = 0x00008000, SPLINE_FINAL_TARGET = 0x00010000, SPLINE_FINAL_ANGLE = 0x00020000,
+    SPLINE_CATMULLROM = 0x00040000, SPLINE_CYCLIC = 0x00080000, SPLINE_ENTER_CYCLE = 0x00100000,
+    SPLINE_ANIMATION = 0x00200000,
 };
 
 // mangos appendPackXYZ: 11-bit x, 11-bit y, 10-bit z, signed, quarter-yard units,
@@ -351,12 +354,12 @@ uint32_t ObjectTable::fieldCap(const WorldObject& o) const {
     if (o.self) return UF::PLAYER_END;
     switch (o.type) {
         case ObjType::Item: return 64;
-        case ObjType::Container: return 128;
+        case ObjType::Container: return 138;
         case ObjType::Unit: return UF::UNIT_END;
         case ObjType::Player: return maxFieldsOther;
-        case ObjType::GameObject: return 32;
-        case ObjType::DynamicObject: return 32;
-        case ObjType::Corpse: return 64;
+        case ObjType::GameObject: return 18;
+        case ObjType::DynamicObject: return 12;
+        case ObjType::Corpse: return 36;
         default: return 8;
     }
 }
@@ -380,6 +383,20 @@ void ObjectTable::applyNames(WorldObject& o) {
     } else if (o.type == ObjType::GameObject) {
         auto it = goNames_.find(o.entry());
         if (it != goNames_.end()) o.name = it->second;
+        auto gi = goInfo_.find(o.entry());
+        if (gi != goInfo_.end()) {
+            o.gameObjectType = gi->second.type;
+            o.hasGameObjectType = true;
+        }
+    }
+}
+
+void ObjectTable::setGoInfo(uint32_t entry, const GoInfo& gi) {
+    goInfo_[entry] = gi;
+    for (auto& [g, o] : objs_) {
+        if (o.type != ObjType::GameObject || o.entry() != entry) continue;
+        o.gameObjectType = gi.type;
+        o.hasGameObjectType = true;
     }
 }
 
@@ -399,9 +416,10 @@ bool ObjectTable::parseFields(Reader& r, WorldObject* o) {
             uint32_t idx = (uint32_t)b * 32 + (uint32_t)bit;
             uint32_t v = r.u32();
             if (o && idx < cap) {
-                const bool known = o->fields.size() > UF::GAMEOBJECT_TYPE_ID;   // false while a create block is still being read
+                const bool known = o->fields.size() > UF::GAMEOBJECT_STATE;
                 if (o->fields.size() <= idx) o->fields.resize(idx + 1, 0);
-                if (idx == UF::GAMEOBJECT_STATE && o->type == ObjType::GameObject && known && o->fields[idx] != v)
+                if (idx == UF::GAMEOBJECT_STATE && o->type == ObjType::GameObject && known &&
+                    (o->fields[idx] & 0xFF) != (v & 0xFF))
                     o->stateChangeMs = nowMs_ ? nowMs_ : 1;   // a change we saw happen (not the first value of a new object)
                 o->fields[idx] = v;
             }
@@ -410,46 +428,35 @@ bool ObjectTable::parseFields(Reader& r, WorldObject* o) {
     return !r.bad;
 }
 
-bool ObjectTable::parseMovementBlock(Reader& r, WorldObject& o, uint32_t nowMs, bool transportTime) {
-    uint8_t uf = r.u8();
+bool ObjectTable::parseMovementBlock(Reader& r, WorldObject& o, uint32_t nowMs) {
+    uint16_t uf = r.u16();
     if (uf & UPDATEFLAG_SELF) o.self = true;
     if (uf & UPDATEFLAG_LIVING) {
         MovementInfo& m = o.mv;
-        m.flags = r.u32();
-        m.time = r.u32();
-        m.x = r.f32(); m.y = r.f32(); m.z = r.f32(); m.o = r.f32();
-        if (m.flags & MoveFlag::OnTransport) {
-            m.transportGuid = transportTime ? r.packedGuid() : r.u64();
-            // A packed-layout trial on a full Vanilla GUID can otherwise look like an empty / player GUID and
-            // consume a plausible but misaligned field block, preventing the Turtle -> Vanilla fallback.
-            if (!m.transportGuid || (m.transportGuid >> 48) == 0) return false;
-            m.tx = r.f32(); m.ty = r.f32(); m.tz = r.f32(); m.to = r.f32();
-            if (transportTime) r.u32();   // 6.58: Turtle
-        }
-        if (m.flags & MoveFlag::Swimming) m.pitch = r.f32();
-        m.fallTime = r.u32();
-        if (m.flags & MoveFlag::Jumping) {
-            m.jumpZSpeed = r.f32(); m.jumpSin = r.f32(); m.jumpCos = r.f32(); m.jumpXYSpeed = r.f32();
-        }
-        if (m.flags & MoveFlag::SplineElevation) m.splineElevation = r.f32();
+        if (!readMovementInfo(r, m)) return false;
         o.speeds.walk = r.f32(); o.speeds.run = r.f32(); o.speeds.runBack = r.f32();
-        o.speeds.swim = r.f32(); o.speeds.swimBack = r.f32(); o.speeds.turn = r.f32();
+        o.speeds.swim = r.f32(); o.speeds.swimBack = r.f32();
+        o.speeds.flight = r.f32(); o.speeds.flightBack = r.f32();
+        o.speeds.turn = r.f32(); o.speeds.pitch = r.f32();
         o.hasPos = true;
         o.posMs = nowMs;
         o.pathActive = false;
-        if ((m.flags & MoveFlag::SplineEnabled) || (turtle && (m.flags & 0x08000000u))) {   // (6.58: Turtle may use TBC's bit)
+        if (m.flags & MoveFlag::SplineEnabled) {
             uint32_t sf = r.u32();
             o.pathHasFinalO = false;
             if (sf & SPLINE_FINAL_POINT) r.skip(12);
             else if (sf & SPLINE_FINAL_TARGET) r.skip(8);
             else if (sf & SPLINE_FINAL_ANGLE) { o.pathFinalO = r.f32(); o.pathHasFinalO = true; }
             uint32_t passed = r.u32(), dur = r.u32();
-            o.pathSplineId = r.u32();   // spline id (7.20: echoed back in CMSG_MOVE_SPLINE_DONE)
+            o.pathSplineId = r.u32();
+            r.f32(); r.f32(); // duration modifiers
+            r.f32(); r.u32(); // vertical acceleration and effect start time
             uint32_t count = r.u32();
             if (r.bad || count > 256) { stats.lastError = "bad spline in movement block"; return false; }
             std::vector<Vec3f> pts;
             pts.reserve(count + 1);
             for (uint32_t i = 0; i < count; ++i) pts.push_back(readVec(r));
+            r.u8(); // spline mode
             Vec3f end = readVec(r);
             if (r.bad) return false;
             // Path: where the unit is now, then the remaining points to the end point.
@@ -463,39 +470,38 @@ bool ObjectTable::parseMovementBlock(Reader& r, WorldObject& o, uint32_t nowMs, 
                 // from the reported position (the first point is the current position).
                 o.pathStartMs = nowMs;
                 o.pathDurMs = dur - passed;
-                o.pathSmooth = (sf & SPLINE_FLYING) != 0;
+                o.pathSmooth = (sf & (SPLINE_FLYING | SPLINE_CATMULLROM)) != 0;
                 o.pathActive = true;
             }
         }
-    } else if (uf & UPDATEFLAG_HAS_POSITION) {
+    } else if (uf & UPDATEFLAG_POSITION) {
+        o.mv.transportGuid = r.packedGuid();
+        o.mv.x = r.f32(); o.mv.y = r.f32(); o.mv.z = r.f32();
+        o.mv.tx = r.f32(); o.mv.ty = r.f32(); o.mv.tz = r.f32();
+        o.mv.o = r.f32(); o.mv.to = r.f32();
+        o.hasPos = true;
+        o.posMs = nowMs;
+    } else if (uf & UPDATEFLAG_STATIONARY_POSITION) {
         o.mv.x = r.f32(); o.mv.y = r.f32(); o.mv.z = r.f32(); o.mv.o = r.f32();
+        o.stationary[0] = o.mv.x; o.stationary[1] = o.mv.y;
+        o.stationary[2] = o.mv.z; o.stationary[3] = o.mv.o;
         o.hasPos = true;
         o.posMs = nowMs;
     }
-    if (uf & UPDATEFLAG_HIGHGUID) r.u32();
-    if (uf & UPDATEFLAG_ALL) r.u32();
-    if (uf & UPDATEFLAG_MELEE_ATTACKING) r.packedGuid();
+    if (uf & UPDATEFLAG_UNKNOWN) r.u32();
+    if (uf & UPDATEFLAG_LOWGUID) r.u32();
+    if (uf & UPDATEFLAG_HAS_TARGET) o.meleeVictim = r.packedGuid();
     if (uf & UPDATEFLAG_TRANSPORT) {
         o.transportProgress = r.u32();
         o.hasTransportProgress = true;
-        o.stationary[0] = o.mv.x; o.stationary[1] = o.mv.y; o.stationary[2] = o.mv.z; o.stationary[3] = o.mv.o;   // the create block carries the resting place
     }
+    if (uf & UPDATEFLAG_VEHICLE) { r.u32(); r.f32(); }
+    if (uf & UPDATEFLAG_ROTATION) r.u64();
     return !r.bad;
 }
 
 bool ObjectTable::parseMovementOrCreate(Reader& r, WorldObject& o, uint32_t nowMs, bool withFields) {
-    if (!turtle) return parseMovementBlock(r, o, nowMs) && (!withFields || parseFields(r, &o));
-    // 6.58: Turtle's layout first (a u32 after the transport position), then 1.12's, as WoWee (TurtlePacketParsers::parseUpdateObject).
-    // They differ only for a unit on a transport; the whole block (with its fields) decides.
-    const size_t at = r.pos;
-    const WorldObject keep = o;
-    if (parseMovementBlock(r, o, nowMs, true) && (!withFields || parseFields(r, &o))) return true;
-    o = keep;
-    r.pos = at;
-    r.bad = false;
-    stats.lastError.clear();
-    ++stats.turtleFallbacks;
-    return parseMovementBlock(r, o, nowMs, false) && (!withFields || parseFields(r, &o));
+    return parseMovementBlock(r, o, nowMs) && (!withFields || parseFields(r, &o));
 }
 
 bool ObjectTable::parseUpdate(const uint8_t* p, size_t n, uint32_t nowMs) {
@@ -525,7 +531,7 @@ bool ObjectTable::parseUpdate(const uint8_t* p, size_t n, uint32_t nowMs) {
                 break;
             }
             case UPD_MOVEMENT: {
-                uint64_t g = r.u64();   // full GUID here, unlike every other block
+                uint64_t g = r.packedGuid();
                 { BlockNote bn; bn.type = 1; bn.guid = g; noteBlock(bn); }   // 7.28
                 WorldObject tmp;
                 WorldObject* o = find(g);
@@ -594,8 +600,15 @@ bool ObjectTable::parseUpdate(const uint8_t* p, size_t n, uint32_t nowMs) {
     return true;
 }
 
-bool ObjectTable::parseMonsterMove(Reader& r, uint32_t nowMs) {
+bool ObjectTable::parseMonsterMove(Reader& r, uint32_t nowMs, bool transportPacket) {
     uint64_t g = r.packedGuid();
+    uint64_t transportGuid = 0;
+    int8_t transportSeat = -1;
+    if (transportPacket) {
+        transportGuid = r.packedGuid();
+        transportSeat = (int8_t)r.u8();
+    }
+    r.u8(); // vehicle exit voluntary
     Vec3f start = readVec(r);
     const uint32_t splineId = r.u32();   // 7.20: echoed back in CMSG_MOVE_SPLINE_DONE
     uint8_t kind = r.u8();
@@ -604,6 +617,8 @@ bool ObjectTable::parseMonsterMove(Reader& r, uint32_t nowMs) {
     WorldObject* op = find(g);
     WorldObject& o = op ? *op : tmp;
     o.pathSplineId = splineId;
+    o.mv.transportGuid = transportGuid;
+    o.mv.transportSeat = transportSeat;
     float drawn[3] = {start.x, start.y, start.z};   // 6.83: where it was drawn a moment ago
     const bool hadPos = op && o.hasPos && !o.carried &&
                         (o.type == ObjType::Unit || (o.type == ObjType::Player && !o.self));
@@ -627,18 +642,17 @@ bool ObjectTable::parseMonsterMove(Reader& r, uint32_t nowMs) {
         default: return false;
     }
     uint32_t flags = r.u32();
-    if (turtle && (flags & 0x00400000u)) { r.u8(); r.u32(); }   // 6.58: Turtle's Animation: type, start time (WoWee readSplineBodyHead)
+    if (flags & SPLINE_ANIMATION) { r.u8(); r.u32(); }
     uint32_t dur = r.u32();
-    if (turtle && (flags & 0x00000800u)) { r.f32(); r.u32(); }  // Parabolic: vertical acceleration, start time
+    if (flags & SPLINE_PARABOLIC) { r.f32(); r.u32(); }
     uint32_t count = r.u32();
     if (r.bad || count == 0 || count > 1000) return false;
-    // Uncompressed (Catmull-Rom/flying/cyclic): count absolute points.
-    // Linear: destination, then count-1 packed offsets from the midpoint.
+    // Linear paths use one absolute endpoint plus packed deltas; smooth paths use absolute points.
     size_t left = r.left();
     bool uncompressed;
     if (left == (size_t)count * 12) uncompressed = true;
     else if (left == 12 + (size_t)(count - 1) * 4) uncompressed = false;
-    else uncompressed = (flags & (SPLINE_FLYING | SPLINE_CATMULLROM | SPLINE_CYCLIC | SPLINE_ENTER_CYCLE)) != 0;
+    else return false;
     std::vector<Vec3f> path;
     path.push_back(start);
     if (uncompressed) {
@@ -652,7 +666,7 @@ bool ObjectTable::parseMonsterMove(Reader& r, uint32_t nowMs) {
     if (r.bad) return false;
     for (auto& p : path) if (!finite3(p)) return false;
     o.path = std::move(path);
-    o.pathSmooth = (flags & SPLINE_FLYING) != 0;
+    o.pathSmooth = (flags & (SPLINE_FLYING | SPLINE_CATMULLROM)) != 0;
     o.pathStartMs = nowMs;
     o.pathDurMs = dur;
     o.pathActive = true;
@@ -661,6 +675,42 @@ bool ObjectTable::parseMonsterMove(Reader& r, uint32_t nowMs) {
 
 bool ObjectTable::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
     switch (op) {
+        case ObjOp::SMSG_AURA_UPDATE: {
+            Reader r(data);
+            const uint64_t guid = r.packedGuid();
+            const uint8_t slot = r.u8();
+            const uint32_t spell = r.u32();
+            if (r.bad) return true;
+            WorldObject* o = find(guid);
+            if (!spell) {
+                if (o) {
+                    for (auto it = o->auras.begin(); it != o->auras.end(); ++it)
+                        if (it->slot == slot) { o->auras.erase(it); break; }
+                }
+                return true;
+            }
+            AuraState aura;
+            aura.slot = slot;
+            aura.spell = spell;
+            aura.flags = r.u8();
+            aura.level = r.u8();
+            aura.stacks = r.u8();
+            aura.caster = (aura.flags & 0x08u) ? guid : r.packedGuid();
+            aura.updatedMs = nowMs;
+            if (aura.flags & 0x20u) {
+                aura.maxDuration = r.u32();
+                aura.duration = r.u32();
+            }
+            if (r.bad) return true;
+            if (o) {
+                for (AuraState& current : o->auras)
+                    if (current.slot == slot) { current = aura; return true; }
+                o->auras.push_back(aura);
+            }
+            return true;
+        }
+        case ObjOp::SMSG_AURA_UPDATE_ALL:
+            return true;
         case ObjOp::SMSG_UPDATE_OBJECT:
             stats.updatePackets++;
             if (!parseUpdate(data.data(), data.size(), nowMs)) stats.failedPackets++;
@@ -691,25 +741,14 @@ bool ObjectTable::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
             return true;
         }
         case ObjOp::SMSG_MONSTER_MOVE: {
-            // 6.58: a Turtle server may send the body zlib-compressed (u32 size, then a zlib stream) and wrapped as a sub-packet
-            // (u8 size, u16 opcode, body) - WoWee MovementHandler::handleMonsterMove
-            if (turtle && data.size() >= 6 && data[4] == 0x78 && (data[5] == 0x01 || data[5] == 0x9C || data[5] == 0xDA || data[5] == 0x5E)) {
-                const uint32_t size = data[0] | (data[1] << 8) | (data[2] << 16) | ((uint32_t)data[3] << 24);
-                Bytes out;
-                if (size == 0 || size > 65536 || !zlibInflate(data.data() + 4, data.size() - 4, out, size)) {
-                    stats.monsterMoveFails++;
-                    return true;
-                }
-                ++stats.turtleCompressedMoves;
-                if (out.size() >= 3 && (size_t)out[0] + 1 == out.size() && (uint16_t)(out[1] | (out[2] << 8)) == ObjOp::SMSG_MONSTER_MOVE)
-                    out.erase(out.begin(), out.begin() + 3);
-                Reader r(out);
-                if (parseMonsterMove(r, nowMs)) stats.monsterMoves++;
-                else stats.monsterMoveFails++;
-                return true;
-            }
             Reader r(data);
             if (parseMonsterMove(r, nowMs)) stats.monsterMoves++;
+            else stats.monsterMoveFails++;
+            return true;
+        }
+        case ObjOp::SMSG_MONSTER_MOVE_TRANSPORT: {
+            Reader r(data);
+            if (parseMonsterMove(r, nowMs, true)) stats.monsterMoves++;
             else stats.monsterMoveFails++;
             return true;
         }
@@ -774,7 +813,7 @@ bool ObjectTable::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
             r.cstr(); r.cstr(); r.cstr();   // name2..4
             if (r.left() > 96) r.cstr();     // 1.12.1: the icon name
             for (int k = 0; k < 24 && r.left() >= 4; ++k) gi.data[k] = r.u32();
-            goInfo_[entry] = gi;
+            setGoInfo(entry, gi);
             for (auto& [g, o] : objs_)
                 if (o.type == ObjType::GameObject && o.entry() == entry) o.name = name;
             stats.gameobjectAnswers++;
@@ -787,13 +826,7 @@ bool ObjectTable::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
         Reader r(data);
         uint64_t g = r.packedGuid();
         MovementInfo m;
-        const size_t start = r.pos;
-        if (turtle) {
-            if (!readMovementInfo(r, m, true) || r.left() != 0) {
-                r.pos = start; r.bad = false; m = MovementInfo{};
-                if (!readMovementInfo(r, m)) return true;
-            }
-        } else if (!readMovementInfo(r, m)) return true;
+        if (!readMovementInfo(r, m)) return true;
         if (WorldObject* o = find(g)) {
             if (o->self) return true;   // our own echo (should not happen)
             o->mv = m;

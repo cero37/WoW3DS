@@ -37,11 +37,8 @@ struct ClassInfo {
     const char* descRu;
 };
 
-// The eight races in the order of the creation screen: Alliance (Human, Dwarf, Night Elf, Gnome), Horde (Orc, Undead,
-// Tauren, Troll); the nine classes in the game's button order.
+// The ten playable WotLK races in creation-screen order; race 9 is not playable. Classes use their ChrClasses ids.
 const RaceInfo* races(int* count);
-// 6.95: Turtle WoW adds two races (9 Goblin, 10 High Elf) and a few race/class combinations; off for vanilla.
-void setTurtle(bool on);
 const ClassInfo* classes(int* count);
 const RaceInfo* race(uint8_t id);
 const ClassInfo* cls(uint8_t id);
@@ -61,6 +58,7 @@ public:
     const std::string* text(const std::string& key) const;
     // The clothes of a new character: display id and inventory type per equipment slot (0 = nothing). False: none known.
     bool outfit(uint8_t race, uint8_t cls, uint8_t sex, uint32_t display[19], uint8_t inv[19]) const;
+    bool classAllowed(uint8_t race, uint8_t cls) const;
     const std::string* zone(uint32_t areaId) const;
     uint32_t zoneParent(uint32_t areaId) const;   // the zone of a subzone (0 = it is a zone, or glue.txt is older)
     // 7.18: the game language from glue.txt ("L ruRU"), what the server localizes its quests, NPC names and gossip by.
@@ -69,6 +67,7 @@ public:
     void addText(const std::string& key, const std::string& v) { texts_[key] = v; }
     void addZone(uint32_t id, const std::string& v) { zones_[id] = v; }
     void addOutfit(uint8_t race, uint8_t cls, uint8_t sex, const std::vector<std::pair<uint32_t, uint8_t>>& items);
+    void addClassCombo(uint8_t race, uint8_t cls);
 private:
     bool loaded_ = false;
     std::string gameLocale_;
@@ -76,6 +75,7 @@ private:
     std::unordered_map<uint32_t, std::string> zones_;
     std::unordered_map<uint32_t, uint32_t> zoneParents_;
     std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint8_t>>> outfits_;
+    std::unordered_map<uint16_t, bool> classCombos_;
 };
 
 // The description shown on the creation screen: the game's text (English) when the client has it, else the built-in one.

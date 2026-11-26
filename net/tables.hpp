@@ -25,6 +25,10 @@ public:
     std::vector<const TalentTree*> treesFor(uint32_t classId) const;
     std::vector<const Talent*> talentsOf(uint32_t tree) const;   // by row, then column
     const Talent* find(uint32_t id) const;
+    uint32_t glyphSpell(uint32_t id) const {
+        auto it = glyphSpells_.find(id);
+        return it == glyphSpells_.end() ? 0 : it->second;
+    }
     // Rank of a talent from the spells we know: the highest rank spell in 'known' (0 = not learned).
     template <class Known> int rankOf(const Talent& t, const Known& known) const {
         int r = 0;
@@ -35,6 +39,7 @@ public:
 private:
     std::vector<TalentTree> trees_;
     std::vector<Talent> talents_;
+    std::unordered_map<uint32_t, uint32_t> glyphSpells_;
 };
 
 // skills.txt (SkillLine.dbc, stage 6.19): the names, categories and descriptions behind the skill ids of the player's fields.

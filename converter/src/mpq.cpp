@@ -21,28 +21,31 @@ std::string lower(std::string s) {
     return s;
 }
 
-// Vanilla load order: base archives < patch.MPQ < patch-2.MPQ < patch-3.MPQ ...
-// (private servers add patch-4..patch-Z). Locale archives in Data/<locale>/
-// rank just above the base ones of the same kind.
+// WotLK 3.3.5a archives are opened from highest to lowest priority because
+// readMpq() returns the first matching file.
 int mpqPriority(const fs::path& p, bool inLocaleDir) {
     std::string n = lower(p.filename().string());
-    int pr = inLocaleDir ? 1 : 0;
     if (n.rfind("patch", 0) == 0) {
-        // "patch.mpq" -> 1, "patch-2.mpq" -> 2, "patch-a.mpq" -> 'a', "patch-enus.mpq" -> 1
-        int level = 1, sub = 0;
-        if (n.size() > 6 && n[5] == '-') {
-            std::string tag = n.substr(6, n.find('.') - 6);
-            if (tag == "1") sub = 1;   // Turtle WoW: patch-1.mpq comes after patch.mpq
-            else if (tag.size() == 1) level = std::isdigit((unsigned char)tag[0]) ? tag[0] - '0' : tag[0];
-            else if (!tag.empty() && std::all_of(tag.begin(), tag.end(), ::isdigit)) level = std::stoi(tag);
-            else if (tag.size() > 4 && tag[4] == '-') {  // patch-enUS-2.mpq
-                char c = tag.back();
-                level = std::isdigit((unsigned char)c) ? c - '0' : c;
-            }
+        int level = 1;
+        const size_t dash = n.rfind('-');
+        if (dash != std::string::npos && dash + 1 < n.size() - 4) {
+            const std::string suffix = n.substr(dash + 1, n.size() - dash - 5);
+            if (!suffix.empty() && std::all_of(suffix.begin(), suffix.end(), [](unsigned char c) { return std::isdigit(c); }))
+                level = std::stoi(suffix);
         }
-        pr = 1000 + level * 4 + sub + (inLocaleDir ? 2 : 0);
+        return 1000 + level * 10 + (inLocaleDir ? 1 : 0);
     }
-    return pr;
+
+    struct Archive { const char* prefix; int priority; };
+    static constexpr Archive archives[] = {
+        {"lichking-speech-", 650}, {"expansion-speech-", 640}, {"lichking-locale-", 630},
+        {"expansion-locale-", 620}, {"speech-", 610}, {"locale-", 600},
+        {"lichking.mpq", 400}, {"expansion.mpq", 300}, {"common-2.mpq", 200}, {"common.mpq", 100},
+    };
+    for (const Archive& archive : archives)
+        if (n.rfind(archive.prefix, 0) == 0)
+            return archive.priority + (inLocaleDir ? 1 : 0);
+    return -1;
 }
 }  // namespace
 
@@ -58,8 +61,10 @@ bool DataDir::openMpq(const std::string& dir) {
     std::vector<fs::path> localeDirs;
     std::error_code ec;
     for (auto& e : fs::directory_iterator(dir, ec)) {
-        if (e.is_regular_file(ec) && lower(e.path().extension().string()) == ".mpq")
-            found.push_back({mpqPriority(e.path(), false), e.path()});
+        if (e.is_regular_file(ec) && lower(e.path().extension().string()) == ".mpq") {
+            const int priority = mpqPriority(e.path(), false);
+            if (priority >= 0) found.push_back({priority, e.path()});
+        }
         else if (e.is_directory(ec) && e.path().filename().string().size() == 4)  // enUS, ruRU, ...
             localeDirs.push_back(e.path());
     }
@@ -68,8 +73,10 @@ bool DataDir::openMpq(const std::string& dir) {
     const std::string want = lower(gameLocaleDir());
     auto addLocale = [&](const fs::path& d) {
         for (auto& l : fs::directory_iterator(d, ec))
-            if (l.is_regular_file(ec) && lower(l.path().extension().string()) == ".mpq")
-                found.push_back({mpqPriority(l.path(), true), l.path()});
+            if (l.is_regular_file(ec) && lower(l.path().extension().string()) == ".mpq") {
+                const int priority = mpqPriority(l.path(), true);
+                if (priority >= 0) found.push_back({priority, l.path()});
+            }
     };
     bool anyLocale = false;
     for (const fs::path& d : localeDirs) {
@@ -82,7 +89,11 @@ bool DataDir::openMpq(const std::string& dir) {
     }
     if (!want.empty() && want != "auto")
         std::printf("  locale: %s (DBC text column %d)\n", gameLocaleDir().c_str(), gameLocaleIndex());
-    std::stable_sort(found.begin(), found.end(), [](auto& a, auto& b) { return a.first > b.first; });
+    std::stable_sort(found.begin(), found.end(), [](const auto& a, const auto& b) {
+        if (a.first != b.first) return a.first > b.first;
+        std::string left = lower(a.second.generic_string()), right = lower(b.second.generic_string());
+        return left < right;
+    });
     for (auto& [pr, path] : found) {
         HANDLE h = nullptr;
         if (SFileOpenArchive(path.string().c_str(), 0, STREAM_FLAG_READ_ONLY, &h)) {

@@ -1,9 +1,9 @@
-// crypto.hpp — the small amount of cryptography a vanilla 1.12.1 login needs,
+// crypto.hpp — the small amount of cryptography the WotLK 3.3.5a login needs,
 // with no external dependencies (builds for 3DS, Linux and Windows alike):
 //   * SHA-1
 //   * unsigned big integers (little-endian 32-bit limbs) with modular exponentiation
 //   * WoW's SRP6 variant (k = 3, interleaved session key)
-//   * the vanilla world-packet header cipher
+//   * the WotLK 3.3.5a ARC4 world-packet header cipher
 #pragma once
 #include <cstddef>
 #include <cstdint>
@@ -79,17 +79,22 @@ bool srpCompute(const std::string& account, const std::string& password, const B
                 const Bytes& N, const Bytes& salt, const Bytes& a, SrpResult& out);
 
 // ------------------------------------------------------------------ header cipher
-// Vanilla 1.12: header bytes only, keyed with the raw 40-byte session key.
+// WotLK 3.3.5a: independent ARC4 streams for each direction, initialized from
+// HMAC-SHA1-derived keys and with the first 1024 keystream bytes discarded.
 class HeaderCipher {
 public:
-    void init(const Bytes& key) { key_ = key; si_ = sp_ = ri_ = rp_ = 0; on_ = !key.empty(); }
+    void init(const Bytes& sessionKey);
     bool enabled() const { return on_; }
     void encrypt(uint8_t* d, size_t n);
     void decrypt(uint8_t* d, size_t n);
 private:
-    Bytes key_;
-    size_t si_ = 0, ri_ = 0;
-    uint8_t sp_ = 0, rp_ = 0;
+    struct Arc4State {
+        uint8_t state[256] = {};
+        uint8_t i = 0, j = 0;
+        void init(const Bytes& key);
+        void apply(uint8_t* data, size_t len);
+    };
+    Arc4State send_, receive_;
     bool on_ = false;
 };
 

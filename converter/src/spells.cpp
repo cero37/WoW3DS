@@ -2,9 +2,8 @@
 // Faction reactions (stage 5.12): FactionTemplate.dbc + Faction.dbc -> factions.txt (see net/factions.hpp).
 //
 // Only spells that appear in SkillLineAbility.dbc (class, racial and profession spells a player can learn)
-// are written, which is ~5 000 lines instead of ~24 000. Spell.dbc of 1.12 has 173 fields; the English name is
-// column 120 and the rank 9 columns later (8 locales + a flags field per string group). To be safe against
-// layout differences the name column is searched for: the column where spell 78 reads "Heroic Strike".
+// are written, which is ~5 000 lines instead of ~24 000. WotLK 3.3.5a Spell.dbc has 234 fields; its localized
+// name group starts at column 136 and its subtext/rank group at 153 (16 locale columns per group).
 #include "conv.h"
 
 #include <algorithm>
@@ -16,8 +15,6 @@
 namespace w3d {
 
 namespace {
-// 7.14: the order of the eight text columns in a 1.12 DBC (enUS first).
-const char* const kLocaleCodes[8] = {"enUS", "koKR", "frFR", "deDE", "zhCN", "zhTW", "esES", "esMX"};
 std::string g_localeDir = "enUS";
 int g_localeIndex = 0;
 }  // namespace
@@ -37,7 +34,7 @@ void setGameLocale(const std::string& code) {
     static const Entry kMap[] = {
         {"enus", 0, "enUS"}, {"engb", 0, "enGB"}, {"kokr", 1, "koKR"}, {"frfr", 2, "frFR"},
         {"dede", 3, "deDE"}, {"zhcn", 4, "zhCN"}, {"zhtw", 5, "zhTW"}, {"eses", 6, "esES"},
-        {"esmx", 7, "esMX"}, {"ruru", 0, "ruRU"},   // ruRU fan clients replace the English column
+        {"esmx", 7, "esMX"}, {"ruru", 8, "ruRU"}, {"ptbr", 9, "ptBR"}, {"itit", 10, "itIT"},
     };
     for (const Entry& e : kMap)
         if (c == e.code) {
@@ -83,13 +80,15 @@ std::string DbcTable::str(uint32_t r, uint32_t f) const {
 }
 
 std::string DbcTable::loc(uint32_t r, uint32_t base, uint32_t count) const {
-    // 7.14: the selected language's column, else the first non-empty one (a DBC may lack a translation).
+    // WotLK LocalizedString has 16 columns; esMX is index 7. Use the first
+    // populated locale when the selected column is empty.
+    const uint32_t locales = std::min<uint32_t>(count, 16);
     const int li = gameLocaleIndex();
-    if (li >= 0 && (uint32_t)li < count) {
+    if (li >= 0 && (uint32_t)li < locales) {
         std::string s = str(r, base + (uint32_t)li);
         if (!s.empty()) return s;
     }
-    for (uint32_t c = 0; c < count; ++c) {
+    for (uint32_t c = 0; c < locales; ++c) {
         std::string s = str(r, base + c);
         if (!s.empty()) return s;
     }
@@ -101,25 +100,8 @@ using Table = DbcTable;
 }  // namespace
 
 int spellNameColumn(const DbcTable& spell) {
-    auto matches = [&](uint32_t c) {
-        for (uint32_t r = 0; r < spell.records; ++r) {
-            uint32_t id = spell.u32(r, 0);
-            if (id != 78 && id != 133 && id != 2457) continue;
-            std::string s = spell.str(r, c);
-            if (s == "Heroic Strike" || s == "Fireball" || s == "Battle Stance") return true;
-        }
-        return false;
-    };
-    if (spell.fields > 120 && matches(120)) return 120;   // the 1.12 layout first: a small id column could alias a string
-    uint32_t lo = spell.fields > 100 ? 100 : 0, hi = std::min<uint32_t>(spell.fields, 200);
-    for (uint32_t c = lo; c < hi; ++c)
-        for (uint32_t r = 0; r < spell.records; ++r) {
-            uint32_t id = spell.u32(r, 0);
-            if (id != 78 && id != 133 && id != 2457) continue;
-            std::string s = spell.str(r, c);
-            if (s == "Heroic Strike" || s == "Fireball" || s == "Battle Stance") return (int)c;
-        }
-    return -1;
+    constexpr uint32_t name = dbc335a::spell::Name;
+    return spell.fields >= 234 ? (int)name : -1;
 }
 
 bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose) {
@@ -128,13 +110,12 @@ bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose
         std::fprintf(stderr, "spells: Spell.dbc not found (no spells.txt)\n");
         return false;
     }
-    // Name column: where spell 78 is "Heroic Strike" (or 133 "Fireball", 2457 "Battle Stance").
     int nameCol = spellNameColumn(spell);
     if (nameCol < 0) {
-        nameCol = 120;
-        std::fprintf(stderr, "spells: name column not found by calibration, assuming 120\n");
+        std::fprintf(stderr, "spells: Spell.dbc is not the WotLK 3.3.5a layout (no spells.txt)\n");
+        return false;
     }
-    int rankCol = nameCol + 9;
+    constexpr uint32_t rankCol = dbc335a::spell::NameSubtext;
 
     std::set<uint32_t> wanted;
     Table sla;   // SkillLineAbility: ID 0, SkillLine 1, Spell 2
@@ -154,19 +135,19 @@ bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose
         for (char& ch : rank) if (ch == '\t' || ch == '\n' || ch == '\r') ch = ' ';
         out += std::to_string(id) + '\t' + name + '\t' + rank + '\n';
         ++n;
-        // 6.40: the school of magic (1.12 Spell.dbc column 1: 1 holy, 2 fire, 3 nature, 4 frost, 5 shadow, 6 arcane; 0 physical):
-        // the client picks a cast sound by it for spells the sound data knows nothing of
-        const uint32_t school = spell.u32(r, 1);
+        // SchoolMask is a bit mask in WotLK; the consumer expects the school enum.
+        const uint32_t mask = spell.u32(r, dbc335a::spell::SchoolMask);
+        uint32_t school = 0;
+        for (uint32_t bit = 1; bit <= 6; ++bit)
+            if (mask == (1u << bit)) { school = bit; break; }
         if (school >= 1 && school <= 6) out += "@school\t" + std::to_string(id) + "\t" + std::to_string(school) + "\n";
     }
-    // Trainers (stage 5.13b) list the spells that teach (effect 36 LEARN_SPELL, the taught spell in
-    // EffectTriggerSpell): write them under the name and rank of what they teach. 1.12 columns: Effect 61-63,
-    // EffectTriggerSpell 109-111, name 120 - taken relative to the name column found above.
+    // Trainers list spells that teach (effect 36 LEARN_SPELL) under the name and rank of what they teach.
     size_t taught = 0;
-    if (haveSla && nameCol >= 59) {
+    if (haveSla) {
         std::unordered_map<uint32_t, uint32_t> rowOf;
         for (uint32_t r = 0; r < spell.records; ++r) rowOf[spell.u32(r, 0)] = r;
-        const uint32_t effCol = (uint32_t)nameCol - 59, trigCol = (uint32_t)nameCol - 11;
+        constexpr uint32_t effCol = dbc335a::spell::Effect, trigCol = dbc335a::spell::EffectTriggerSpell;
         for (uint32_t r = 0; r < spell.records; ++r) {
             uint32_t id = spell.u32(r, 0);
             if (!id || wanted.count(id)) continue;
@@ -188,11 +169,11 @@ bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose
     }
     // Buffs and debuffs (stage 5.16): the aura bar shows auras of any spell (food, NPC spells, items), so every
     // visible aura spell gets its name too: an effect 6 (APPLY_AURA) or 35 (APPLY_AREA_AURA), not passive (0x40)
-    // and not hidden (0x80) in Attributes (column 6 in 1.12, i.e. name column - 114).
+    // and not hidden (0x80) in Attributes.
     size_t auras = 0;
-    if (nameCol >= 114) {
+    {
         std::set<uint32_t> written(wanted.begin(), wanted.end());
-        const uint32_t effCol = (uint32_t)nameCol - 59, attrCol = (uint32_t)nameCol - 114;
+        constexpr uint32_t effCol = dbc335a::spell::Effect, attrCol = dbc335a::spell::Attributes;
         for (uint32_t r = 0; r < spell.records; ++r) {
             uint32_t id = spell.u32(r, 0);
             if (!id || written.count(id) || (spell.u32(r, attrCol) & 0xC0)) continue;
@@ -209,20 +190,19 @@ bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose
     }
     // UI stage 10: spells placed on the ground (Blizzard, Flamestrike, Rain of Fire, Volley, Hurricane, the engineers'
     // bombs ...): "@ground<TAB>id<TAB>max range<TAB>radius" (yards). Ground = the Targets mask asks for a destination
-    // (TARGET_FLAG_DEST_LOCATION 0x40) or an effect hits the units around a chosen point (ImplicitTarget 16 / 28 / 31 / 34,
-    // vMaNGOS SpellTarget). 1.12 columns relative to the name (120): Targets 13, RangeIndex 36, ImplicitTargetA 82-84,
-    // ImplicitTargetB 85-87, EffectRadiusIndex 88-90; SpellRange.dbc MaxRange 2, SpellRadius.dbc Radius 1. Every spell
+    // or an effect hits the units around a chosen point. WotLK Spell.dbc target/effect columns and SpellRange MaxRange are used.
     // (items' spells are not in SkillLineAbility); the old client skips these lines (no id before the first tab).
     size_t ground = 0;
-    if (nameCol >= 107) {
+    {
         Table range, radius;
         std::unordered_map<uint32_t, float> rangeOf, radiusOf;
-        if (range.load(data, "SpellRange.dbc") && range.fields > 2)
-            for (uint32_t r = 0; r < range.records; ++r) rangeOf[range.u32(r, 0)] = range.f32(r, 2);
+        if (range.load(data, "SpellRange.dbc") && range.fields > 3)
+            for (uint32_t r = 0; r < range.records; ++r) rangeOf[range.u32(r, 0)] = range.f32(r, 3);
         if (radius.load(data, "SpellRadius.dbc") && radius.fields > 1)
             for (uint32_t r = 0; r < radius.records; ++r) radiusOf[radius.u32(r, 0)] = radius.f32(r, 1);
-        const uint32_t tgtCol = (uint32_t)nameCol - 107, rangeCol = (uint32_t)nameCol - 84, aCol = (uint32_t)nameCol - 38,
-                       bCol = (uint32_t)nameCol - 35, radCol = (uint32_t)nameCol - 32;
+        constexpr uint32_t tgtCol = 16, rangeCol = dbc335a::spell::RangeIndex;
+        constexpr uint32_t aCol = dbc335a::spell::EffectImplicitTargetA, bCol = dbc335a::spell::EffectImplicitTargetB;
+        constexpr uint32_t radCol = dbc335a::spell::EffectRadiusIndex;
         auto areaAtDest = [](uint32_t t) { return t == 16 || t == 28 || t == 31 || t == 34; };
         std::string known;
         for (uint32_t r = 0; r < spell.records; ++r) {
@@ -248,21 +228,18 @@ bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose
         }
         std::printf("  ground-targeted spells: %zu (known among them:%s)\n", ground, known.empty() ? " none" : known.c_str());
     }
-    // 7.16: items used on another item (Shiny Bauble on the fishing pole, a weapon oil or a sharpening stone on a weapon,
-    // a poison): "@item<TAB>id<TAB>itemClass<TAB>subclassMask<TAB>inventoryTypeMask<TAB>mainHand". The spell's Targets mask
-    // (name - 107) asks for an item (TARGET_FLAG_ITEM 0x10); the item requirements are Spell.dbc EquippedItemClass -62
-    // (-1 = any), EquippedItemSubClassMask -61 and EquippedItemInventoryTypeMask -60 (the same columns recipes.txt uses).
-    // mainHand = SPELL_ATTR_HELD_ITEM_ONLY (Attributes 0x200, name - 114): the original client puts the item from the main
-    // hand in the cast by itself (vMaNGOS Spell::CheckCast requires that slot).
+    // Items used on another item (Shiny Bauble, weapon oils, sharpening stones, poisons): WotLK target/equipment fields
+    // identify the selected item, while the held-item attribute requires the main-hand item.
     size_t itemCasts = 0;
-    if (nameCol >= 114) {
-        const uint32_t tgtCol = (uint32_t)nameCol - 107, attrCol = (uint32_t)nameCol - 114, effCol = (uint32_t)nameCol - 59;
+    {
+        constexpr uint32_t tgtCol = 16, attrCol = dbc335a::spell::Attributes, effCol = dbc335a::spell::Effect;
         std::string known;
         for (uint32_t r = 0; r < spell.records; ++r) {
             const uint32_t id = spell.u32(r, 0);
             if (!id) continue;
-            const int32_t cls = (int32_t)spell.u32(r, (uint32_t)nameCol - 62);
-            const uint32_t sub = spell.u32(r, (uint32_t)nameCol - 61), inv = spell.u32(r, (uint32_t)nameCol - 60);
+            const int32_t cls = (int32_t)spell.u32(r, dbc335a::spell::EquippedItemClass);
+            const uint32_t sub = spell.u32(r, dbc335a::spell::EquippedItemSubclass);
+            const uint32_t inv = spell.u32(r, dbc335a::spell::EquippedItemInvTypes);
             const bool mainHand = (spell.u32(r, attrCol) & 0x200) != 0;
             // The Targets mask is what the client uses to pick the cursor. Some item spells leave it 0 and only mark the
             // held item: their item requirements (a real class, not -1) and an enchant effect (53 permanent, 54 temporary,
@@ -289,8 +266,9 @@ bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose
     // target for it and refused the cast (it worked only with nothing selected). Spells with any single-unit target (6
     // chain damage, 21 friend ...) or an unknown one are left out.
     size_t selfCasts = 0;
-    if (nameCol >= 107) {
-        const uint32_t effC = (uint32_t)nameCol - 59, aC = (uint32_t)nameCol - 38, bC = (uint32_t)nameCol - 35;
+    {
+        constexpr uint32_t effC = dbc335a::spell::Effect, aC = dbc335a::spell::EffectImplicitTargetA;
+        constexpr uint32_t bC = dbc335a::spell::EffectImplicitTargetB;
         auto selfKind = [](uint32_t t) {
             return t == 1 || t == 15 || t == 20 || t == 22 || t == 30 || t == 33 || t == 34 || t == 36;
         };
@@ -315,8 +293,9 @@ bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose
     // and none at a single enemy (6, 25): Holy Light, Flash Heal, Rejuvenation ...; the client casts them at itself when the
     // selected target is an enemy or nothing.
     size_t friends = 0;
-    if (nameCol >= 107) {
-        const uint32_t effC = (uint32_t)nameCol - 59, aC = (uint32_t)nameCol - 38, bC = (uint32_t)nameCol - 35;
+    {
+        constexpr uint32_t effC = dbc335a::spell::Effect, aC = dbc335a::spell::EffectImplicitTargetA;
+        constexpr uint32_t bC = dbc335a::spell::EffectImplicitTargetB;
         for (uint32_t r = 0; r < spell.records; ++r) {
             const uint32_t id = spell.u32(r, 0);
             if (!id) continue;
@@ -334,13 +313,11 @@ bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose
         }
         std::printf("  helpful spells at a friend: %zu\n", friends);
     }
-    // UI stage 12: cooldowns, "@cd id recovery category categoryRecovery onEvent" (ms): the 1.12 server sends none for an
-    // ordinary cast, the client starts them itself from Spell.dbc. Columns relative to the name (120): Category 2,
-    // Attributes 6 (0x02000000 SPELL_ATTR_COOLDOWN_ON_EVENT), RecoveryTime 19, CategoryRecoveryTime 20.
+    // UI stage 12: cooldowns, "@cd id recovery category categoryRecovery onEvent" (ms).
     size_t cds = 0;
-    if (nameCol >= 118) {
-        const uint32_t catCol = (uint32_t)nameCol - 118, attrCol = (uint32_t)nameCol - 114, recCol = (uint32_t)nameCol - 101,
-                       catRecCol = (uint32_t)nameCol - 100;
+    {
+        constexpr uint32_t catCol = dbc335a::spell::Category, attrCol = dbc335a::spell::Attributes;
+        constexpr uint32_t recCol = dbc335a::spell::RecoveryTime, catRecCol = dbc335a::spell::CategoryRecoveryTime;
         std::string known;
         for (uint32_t r = 0; r < spell.records; ++r) {
             const uint32_t id = spell.u32(r, 0), rec = spell.u32(r, recCol), catRec = spell.u32(r, catRecCol);
@@ -356,18 +333,18 @@ bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose
         }
         std::printf("  spell cooldowns: %zu (known among them:%s)\n", cds, known.empty() ? " none" : known.c_str());
     }
-    // 6.64: cast times, "@cast id ms": Spell.dbc CastingTimeIndex (column name-102) -> SpellCastTimes.dbc (ID, Base ms, PerLevel, Minimum).
+    // Cast times: Spell.dbc CastingTimeIndex -> SpellCastTimes.dbc (ID, Base ms, PerLevel, Minimum).
     // The client starts its own cast bar and animation on send instead of waiting for SMSG_SPELL_START (ping).
     size_t casts = 0;
     {
         DbcTable ct;
-        if (nameCol >= 102 && ct.load(data, "SpellCastTimes.dbc")) {
+        if (ct.load(data, "SpellCastTimes.dbc")) {
             std::unordered_map<uint32_t, uint32_t> baseOf;
             for (uint32_t r = 0; r < ct.records; ++r) {
                 const int32_t base = (int32_t)ct.u32(r, 1);
                 if (base > 0) baseOf[ct.u32(r, 0)] = (uint32_t)base;
             }
-            const uint32_t idxCol = (uint32_t)nameCol - 102;
+            constexpr uint32_t idxCol = 28;
             for (uint32_t r = 0; r < spell.records; ++r) {
                 const uint32_t id = spell.u32(r, 0);
                 auto it = baseOf.find(spell.u32(r, idxCol));
@@ -380,25 +357,11 @@ bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose
             std::fprintf(stderr, "spells: SpellCastTimes.dbc not found (no cast prediction)\n");
         }
     }
-    // 6.87: auto-attack, "@combat id kind": 1 = a melee ability at an enemy (the original client turns auto-attack on with it),
-    // 2 = fired with the ranged weapon (the shooting animation), 4 = SPELL_ATTR_STOP_ATTACK_TARGET (auto-attack ends).
-    // 1.12 columns relative to the name (120): Attributes 6 (0x2 RANGED, 0x40 PASSIVE, 0x100000 STOP_ATTACK_TARGET),
-    // AttributesEx2 8 (0x20 AUTOREPEAT), ImplicitTargetA 82-84, DmgClass 164 (1 magic, 2 melee, 3 ranged). The DmgClass column
-    // is checked against Sinister Strike 1752 = 2, Arcane Shot 3044 = 3, Fireball 133 = 1, and searched for if it differs.
+    // WotLK does not store DmgClass in Spell.dbc; export only ranged/stop-attack behavior represented by attributes.
     size_t combat = 0;
-    if (nameCol >= 114) {
-        std::unordered_map<uint32_t, uint32_t> rowOf;
-        for (uint32_t r = 0; r < spell.records; ++r) rowOf[spell.u32(r, 0)] = r;
-        auto dmgOk = [&](uint32_t col) {
-            auto v = [&](uint32_t id) -> int64_t { auto it = rowOf.find(id); return it == rowOf.end() ? -1 : (int64_t)spell.u32(it->second, col); };
-            return v(1752) == 2 && v(3044) == 3 && v(133) == 1;
-        };
-        int dmgCol = -1;
-        if ((uint32_t)nameCol + 44 < spell.fields && dmgOk((uint32_t)nameCol + 44)) dmgCol = nameCol + 44;
-        for (uint32_t c = (uint32_t)nameCol + 20; dmgCol < 0 && c < spell.fields; ++c)
-            if (dmgOk(c)) dmgCol = (int)c;
-        const uint32_t attrCol = (uint32_t)nameCol - 114, attr2Col = (uint32_t)nameCol - 112, aCol = (uint32_t)nameCol - 38;
-        size_t melee = 0, ranged = 0, stops = 0, passives = 0;
+    {
+        constexpr uint32_t attrCol = dbc335a::spell::Attributes, attr2Col = dbc335a::spell::AttributesExB;
+        size_t ranged = 0, stops = 0, passives = 0;
         // 6.95: "@passive id" - SPELL_ATTR_PASSIVE spells: the book shows them but they cannot be put on a bar
         for (uint32_t r = 0; r < spell.records; ++r) {
             const uint32_t id = spell.u32(r, 0);
@@ -413,10 +376,10 @@ bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose
             const uint32_t id = spell.u32(r, 0);
             if (!id) continue;
             bool hide = (spell.u32(r, attrCol) & 0x80) != 0;
-            if (!hide && nameCol >= 56) {
+            if (!hide) {
                 bool any = false, onlySkill = true;
                 for (uint32_t k = 0; k < 3; ++k) {
-                    const uint32_t e = spell.u32(r, (uint32_t)nameCol - 56 + k);
+                    const uint32_t e = spell.u32(r, dbc335a::spell::Effect + k);
                     if (!e) continue;
                     any = true;
                     if (e != 39 && e != 44 && e != 60 && e != 118) onlySkill = false;
@@ -430,33 +393,29 @@ bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose
             const uint32_t id = spell.u32(r, 0);
             if (!id) continue;
             const uint32_t attr = spell.u32(r, attrCol), attr2 = spell.u32(r, attr2Col);
-            const uint32_t dmg = dmgCol >= 0 ? spell.u32(r, (uint32_t)dmgCol) : 0;
             if (attr & 0x40) continue;   // passive
-            bool atEnemy = false;
-            for (uint32_t k = 0; k < 3; ++k) atEnemy = atEnemy || spell.u32(r, aCol + k) == 6;   // TARGET_CHAIN_DAMAGE: the enemy
             const bool learnable = !haveSla || wanted.count(id);
             uint32_t kind = 0;
-            if (learnable && dmg == 2 && atEnemy && !(attr & 0x100000)) kind |= 1;
-            if ((attr & 0x2) || dmg == 3 || (attr2 & 0x20)) kind |= 2;
+            if ((attr & 0x2) || (attr2 & 0x20)) kind |= 2;
             if (learnable && (attr & 0x100000)) kind |= 4;
             if (!kind) continue;
             out += "@combat\t" + std::to_string(id) + "\t" + std::to_string(kind) + "\n";
             ++combat;
-            melee += (kind & 1) != 0; ranged += (kind & 2) != 0; stops += (kind & 4) != 0;
+            ranged += (kind & 2) != 0; stops += (kind & 4) != 0;
         }
-        std::printf("  auto-attack spells: %zu (%zu melee abilities, %zu ranged, %zu that stop it; DmgClass column %d%s)\n", combat, melee,
-                    ranged, stops, dmgCol, dmgCol < 0 ? " NOT FOUND: melee abilities will not start auto-attack" : "");
+        std::printf("  auto-attack spells: %zu (%zu ranged, %zu that stop it; WotLK Spell.dbc has no DmgClass field)\n", combat,
+                    ranged, stops);
     }
-    // 6.87: range, "@range id min max" (yards; SpellRange.dbc ID 0, MinRange 1, MaxRange 2; Spell.dbc RangeIndex = name - 84).
+    // Range, "@range id min max" (yards; WotLK SpellRange.dbc MinRange 1, MaxRange 3).
     // The original client refuses a cast at a unit out of range / too close itself, before sending it. Index 1 (self) and 2
     // (melee "combat range": the server checks reach with the bounding radii) are left out.
     size_t ranges = 0;
-    if (nameCol >= 84) {
+    {
         Table rg;
-        if (rg.load(data, "SpellRange.dbc") && rg.fields > 2) {
+        if (rg.load(data, "SpellRange.dbc") && rg.fields > 3) {
             std::unordered_map<uint32_t, std::pair<float, float>> mm;
-            for (uint32_t r = 0; r < rg.records; ++r) mm[rg.u32(r, 0)] = {rg.f32(r, 1), rg.f32(r, 2)};
-            const uint32_t rangeCol = (uint32_t)nameCol - 84;
+            for (uint32_t r = 0; r < rg.records; ++r) mm[rg.u32(r, 0)] = {rg.f32(r, 1), rg.f32(r, 3)};
+            constexpr uint32_t rangeCol = dbc335a::spell::RangeIndex;
             for (uint32_t r = 0; r < spell.records; ++r) {
                 const uint32_t id = spell.u32(r, 0), idx = spell.u32(r, rangeCol);
                 if (!id || idx <= 2 || (haveSla && !wanted.count(id))) continue;
@@ -484,19 +443,7 @@ bool exportSpellNames(const DataDir& data, const std::string& path, bool verbose
 }
 
 
-// factions.txt: "T" = FactionTemplate.dbc (14 fields: id, faction, flags, our/friendly/hostile masks, 4 enemies,
-// 4 friends), "F" = Faction.dbc (1.12: 37 fields: id, reputation index, race masks 2-5, class masks 6-9, base
-// standings 10-13, flags 14-17, parent 18, names 19-26 (8 locales), name flags 27, descriptions 28-36).
-// 7.16: language detection for the GUI. Spell.dbc's eight text columns are (enUS, koKR, frFR, deDE, zhCN, zhTW,
-// esES, esMX). A column counts when it has real translated names; the base column is ruRU when it is mostly Cyrillic
-// (a Russian fan client replaced English). Data\<code>\ folders are added by the caller (main.cpp).
-static bool hasCyrillic(const std::string& s) {
-    for (size_t i = 0; i + 1 < s.size(); ++i) {
-        const unsigned char a = (unsigned char)s[i], b = (unsigned char)s[i + 1];
-        if ((a == 0xD0 || a == 0xD1) && b >= 0x80 && b <= 0xBF) return true;
-    }
-    return false;
-}
+// Faction tables are exported from their WotLK layouts. Spell.dbc uses a 16-column locale block.
 
 std::vector<std::string> availableLocales(const DataDir& data) {
     std::vector<std::string> out;
@@ -504,28 +451,28 @@ std::vector<std::string> availableLocales(const DataDir& data) {
     if (!spell.load(data, "Spell.dbc")) return out;
     const int nameCol = spellNameColumn(spell);
     if (nameCol < 0 || (uint32_t)nameCol >= spell.fields) return out;
-    const int cols = std::min(8, (int)(spell.fields - (uint32_t)nameCol));
+    const int cols = std::min(16, (int)(spell.fields - (uint32_t)nameCol));
     if (cols <= 0) return out;
-    uint32_t baseRows = 0, cyrRows = 0;
+    uint32_t baseRows = 0;
     std::vector<uint32_t> diff((size_t)cols, 0);
     for (uint32_t r = 0; r < spell.records; ++r) {
         const std::string base = spell.str(r, (uint32_t)nameCol);
         if (!base.empty()) {
             ++baseRows;
-            if (hasCyrillic(base)) ++cyrRows;
         }
         for (int c = 1; c < cols; ++c) {
             const std::string s = spell.str(r, (uint32_t)(nameCol + c));
             if (!s.empty() && s != base) ++diff[(size_t)c];
         }
     }
-    if (baseRows) out.push_back(cyrRows * 10 > baseRows ? "ruRU" : "enUS");
-    static const char* const kOther[7] = {"koKR", "frFR", "deDE", "zhCN", "zhTW", "esES", "esMX"};
+    static const char* const kLocales[11] = {"enUS", "koKR", "frFR", "deDE", "zhCN", "zhTW",
+                                              "esES", "esMX", "ruRU", "ptBR", "itIT"};
+    if (baseRows) out.push_back(kLocales[0]);
     // A handful of translated names is enough (custom clients may only translate part of the data); avoid counting
     // rows where a locale column merely repeats the English fallback.
     const uint32_t need = std::max<uint32_t>(5, baseRows / 100);
-    for (int c = 1; c < cols && c <= 7; ++c)
-        if (diff[(size_t)c] >= need) out.push_back(kOther[c - 1]);
+    for (int c = 1; c < cols && c < 11; ++c)
+        if (diff[(size_t)c] >= need) out.push_back(kLocales[c]);
     return out;
 }
 
@@ -535,7 +482,7 @@ bool exportFactions(const DataDir& data, const std::string& path, bool verbose) 
         std::fprintf(stderr, "factions: FactionTemplate.dbc not found (no factions.txt)\n");
         return false;
     }
-    bool haveFa = fa.load(data, "Faction.dbc") && fa.fields >= 19;
+    bool haveFa = fa.load(data, "Faction.dbc") && fa.fields >= 39;
     std::string out = "# wow3ds factions: T id faction flags our friendly hostile enemy x4 friend x4 | "
                       "F id repIndex raceMask x4 classMask x4 base x4 flags x4 name\n";
     size_t nt = 0, nf = 0;
@@ -552,7 +499,7 @@ bool exportFactions(const DataDir& data, const std::string& path, bool verbose) 
             out += "F\t" + std::to_string(fa.u32(r, 0)) + "\t" + std::to_string((int32_t)fa.u32(r, 1));
             for (uint32_t c = 2; c < 18; ++c)
                 out += "\t" + (c >= 10 && c < 14 ? std::to_string((int32_t)fa.u32(r, c)) : std::to_string(fa.u32(r, c)));
-            std::string name = fa.loc(r, 19, 8);   // 7.14: the selected language
+            std::string name = fa.loc(r, 23, 16);
             for (char& ch : name) if (ch == '\t' || ch == '\n' || ch == '\r') ch = ' ';
             out += "\t" + name + "\n";
             ++nf;

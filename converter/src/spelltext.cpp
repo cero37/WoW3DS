@@ -1,7 +1,7 @@
 // Spell descriptions for the 3DS client (6.20): Spell.dbc Description / ToolTip with the variables of the original client
 // filled in, written to spelldesc.bin (format in conv.h).
 //
-// The variables (Spell.dbc strings of 1.12, as the original client's tooltips show them):
+// The variables use WotLK 3.3.5a Spell.dbc columns, matching the client's tooltip values:
 //   $s1..3 effect value ("min to max" when the effect rolls a die), $m1 min, $M1 max, $o1 total of a periodic effect
 //   (value * duration / period), $d duration, $a1 / $A1 radius (min / max, yards), $t1 period (s), $h proc chance, $n proc
 //   charges, $u stack, $x1 chain targets, $i max targets, $r range, $b1 points per combo point, $e1 multiple value, $q1 misc
@@ -280,14 +280,12 @@ bool exportSpellDescriptions(const DataDir& data, const std::string& path, bool 
         std::fprintf(stderr, "spelldesc: Spell.dbc not found (no spelldesc.bin)\n");
         return false;
     }
-    int nameCol = spellNameColumn(spell);
-    if (nameCol < 0) nameCol = 120;
-    const uint32_t nc = (uint32_t)nameCol;
-    if (nc < 95 || nc + 27 >= spell.fields) {
+    if (spellNameColumn(spell) < 0 || spell.fields <= dbc335a::spell::AuraDescription + 15) {
         std::fprintf(stderr, "spelldesc: Spell.dbc layout not understood (no spelldesc.bin)\n");
         return false;
     }
-    const uint32_t descCol = nc + 18, tipCol = nc + 27;
+    constexpr uint32_t descCol = dbc335a::spell::Description;
+    constexpr uint32_t tipCol = dbc335a::spell::AuraDescription;
     DbcTable dur, rad, rng;
     std::unordered_map<uint32_t, int32_t> durOf;
     std::unordered_map<uint32_t, std::pair<float, float>> radOf;
@@ -296,40 +294,33 @@ bool exportSpellDescriptions(const DataDir& data, const std::string& path, bool 
         for (uint32_t r = 0; r < dur.records; ++r) durOf[dur.u32(r, 0)] = (int32_t)dur.u32(r, 1);
     if (rad.load(data, "SpellRadius.dbc") && rad.fields > 3)
         for (uint32_t r = 0; r < rad.records; ++r) radOf[rad.u32(r, 0)] = {rad.f32(r, 1), rad.f32(r, 3)};
-    if (rng.load(data, "SpellRange.dbc") && rng.fields > 2)
-        for (uint32_t r = 0; r < rng.records; ++r) rngOf[rng.u32(r, 0)] = rng.f32(r, 2);
+    if (rng.load(data, "SpellRange.dbc") && rng.fields > 3)
+        for (uint32_t r = 0; r < rng.records; ++r) rngOf[rng.u32(r, 0)] = rng.f32(r, 3);
     std::unordered_map<uint32_t, uint32_t> rowOf;
     for (uint32_t r = 0; r < spell.records; ++r) rowOf[spell.u32(r, 0)] = r;
 
-    // Columns of the 1.12 Spell.dbc relative to the name column (120): the ones the other exports use, and
-    // ProcChance 25, ProcCharges 26, MaxLevel 27, BaseLevel 28, SpellLevel 29, DurationIndex 30, RangeIndex 36, StackAmount 39,
-    // DieSides 64, RealPointsPerLevel 73, BasePoints 76, RadiusIndex 88, Amplitude 94, MultipleValue 97, ChainTarget 100,
-    // MiscValue 106, PointsPerComboPoint 112, MaxAffectedTargets 163.
-    auto colOf = [&](uint32_t abs120) { return nc + abs120 - 120; };
     auto values = [&](uint32_t row) {
         SpellTextVals v;
-        v.procChance = spell.u32(row, colOf(25));
-        v.procCharges = spell.u32(row, colOf(26));
-        v.maxLevel = spell.u32(row, colOf(27));
-        v.baseLevel = spell.u32(row, colOf(28));
-        v.spellLevel = spell.u32(row, colOf(29));
-        auto d = durOf.find(spell.u32(row, colOf(30)));
+        v.procChance = spell.u32(row, dbc335a::spell::ProcChance);
+        v.procCharges = spell.u32(row, dbc335a::spell::ProcCharges);
+        v.maxLevel = spell.u32(row, dbc335a::spell::MaxLevel);
+        v.baseLevel = spell.u32(row, dbc335a::spell::BaseLevel);
+        v.spellLevel = spell.u32(row, dbc335a::spell::SpellLevel);
+        auto d = durOf.find(spell.u32(row, dbc335a::spell::DurationIndex));
         v.durationMs = d == durOf.end() ? 0 : d->second;
-        auto g = rngOf.find(spell.u32(row, colOf(36)));
+        auto g = rngOf.find(spell.u32(row, dbc335a::spell::RangeIndex));
         v.rangeMax = g == rngOf.end() ? 0.0f : g->second;
-        v.stack = spell.u32(row, colOf(39));
-        v.maxTargets = colOf(163) < spell.fields ? spell.u32(row, colOf(163)) : 0;
+        v.maxTargets = spell.u32(row, dbc335a::spell::MaxTargets);
         for (uint32_t k = 0; k < 3; ++k) {
-            v.dieSides[k] = (int32_t)spell.u32(row, colOf(64) + k);
-            v.perLevel[k] = spell.f32(row, colOf(73) + k);
-            v.base[k] = (int32_t)spell.u32(row, colOf(76) + k);
-            auto r = radOf.find(spell.u32(row, colOf(88) + k));
+            v.dieSides[k] = (int32_t)spell.u32(row, dbc335a::spell::EffectDieSides + k);
+            v.perLevel[k] = spell.f32(row, dbc335a::spell::EffectRealPointsPerLevel + k);
+            v.base[k] = (int32_t)spell.u32(row, dbc335a::spell::EffectBasePoints + k);
+            auto r = radOf.find(spell.u32(row, dbc335a::spell::EffectRadiusIndex + k));
             if (r != radOf.end()) { v.radiusMin[k] = r->second.first; v.radiusMax[k] = r->second.second; }
-            v.amplitudeMs[k] = spell.u32(row, colOf(94) + k);
-            v.multiple[k] = spell.f32(row, colOf(97) + k);
-            v.chain[k] = spell.u32(row, colOf(100) + k);
-            v.misc[k] = (int32_t)spell.u32(row, colOf(106) + k);
-            v.combo[k] = spell.f32(row, colOf(112) + k);
+            v.amplitudeMs[k] = spell.u32(row, dbc335a::spell::EffectAmplitude + k);
+            v.chain[k] = spell.u32(row, dbc335a::spell::EffectChainTargets + k);
+            v.misc[k] = (int32_t)spell.u32(row, dbc335a::spell::EffectMiscValue + k);
+            v.combo[k] = spell.f32(row, dbc335a::spell::EffectPointsPerCombo + k);
         }
         return v;
     };
@@ -348,7 +339,7 @@ bool exportSpellDescriptions(const DataDir& data, const std::string& path, bool 
     for (uint32_t r = 0; r < spell.records; ++r) {
         const uint32_t id = spell.u32(r, 0);
         if (!id) continue;
-        std::string raw = spell.loc(r, descCol);   // 7.14: the selected language's description / tooltip
+        std::string raw = spell.loc(r, descCol);
         if (raw.empty()) { raw = spell.loc(r, tipCol); withTip += !raw.empty(); }
         if (raw.empty()) continue;
         const SpellTextVals* v = other(id);

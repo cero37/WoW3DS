@@ -56,9 +56,10 @@ PartyMember GameSession::memberView(const PartyMember& m) const {
             v.maxHp = o->maxHealth();
             v.level = o->level();
             v.powerType = (uint8_t)((o->field(UF::UNIT_BYTES_0) >> 24) & 0xFF);
-            if (v.powerType > 3) v.powerType = 0;
+            if (v.powerType > 6) v.powerType = 0;
             v.power = o->field((uint16_t)(UF::UNIT_POWER1 + v.powerType));
             v.maxPower = o->field((uint16_t)(UF::UNIT_MAXPOWER1 + v.powerType));
+            if (v.powerType == 5) v.maxPower = 0;
             v.statsKnown = true;
         }
     }
@@ -202,7 +203,8 @@ bool GameSession::handleGroup(uint16_t op, const Bytes& data, uint32_t nowMs) {
             if (mask & 0x100) { d.x = (int16_t)r.u16(); d.y = (int16_t)r.u16(); }
             // auras and the pet are not shown on the 3DS (yet): parsing stops here
             if (r.bad) return true;
-            if (d.powerType > 3) d.powerType = 0;
+            if (d.powerType > 6) d.powerType = 0;
+            if (d.powerType == 5) d.maxPower = 0;
             if (mask & 0x6) d.statsKnown = true;
             ++partyStats;
             return true;

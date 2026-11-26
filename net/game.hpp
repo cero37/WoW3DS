@@ -22,14 +22,16 @@
 namespace w3n {
 
 // ---------------------------------------------------------------- chat, target, melee, loot (stage 5.6/5.7)
-// Chat types of 1.12 (vMaNGOS SharedDefines.h ChatMsg; WoWee's enum is the WotLK numbering).
+// ChatMsg values from TrinityCore/AzerothCore 3.3.5a.
 namespace Chat {
 enum : uint8_t {
-    Say = 0x00, Party = 0x01, Raid = 0x02, Guild = 0x03, Officer = 0x04, Yell = 0x05, Whisper = 0x06,
-    WhisperInform = 0x07, Emote = 0x08, TextEmote = 0x09, System = 0x0A, MonsterSay = 0x0B, MonsterYell = 0x0C,
-    MonsterEmote = 0x0D, Channel = 0x0E, ChannelJoin = 0x0F, ChannelLeave = 0x10, ChannelNotice = 0x12, Afk = 0x14,
-    Dnd = 0x15, Ignored = 0x16, Skill = 0x17, Loot = 0x18, MonsterWhisper = 0x1A, RaidLeader = 0x57,
-    RaidWarning = 0x58, Battleground = 0x5C, BattlegroundLeader = 0x5D,
+    System = 0x00, Say = 0x01, Party = 0x02, Raid = 0x03, Guild = 0x04, Officer = 0x05, Yell = 0x06,
+    Whisper = 0x07, WhisperForeign = 0x08, WhisperInform = 0x09, Emote = 0x0A, TextEmote = 0x0B,
+    MonsterSay = 0x0C, MonsterParty = 0x0D, MonsterYell = 0x0E, MonsterWhisper = 0x0F, MonsterEmote = 0x10,
+    Channel = 0x11, ChannelJoin = 0x12, ChannelLeave = 0x13,
+    ChannelNotice = 0x15, Afk = 0x17, Dnd = 0x18, Ignored = 0x19, Skill = 0x1A, Loot = 0x1B,
+    RaidLeader = 0x27, RaidWarning = 0x28, Battleground = 0x2C, BattlegroundLeader = 0x2D,
+    Achievement = 0x30, GuildAchievement = 0x31,
     // not from the server: lines the session writes itself (combat, XP, loot, errors)
     Local = 0xFE,
 };
@@ -159,9 +161,7 @@ private:
 
 struct ActionButton { uint32_t action = 0; uint8_t type = 0; };   // type 0 = spell (1.12: 0x40 macro, 0x80 item)
 
-// A buff or debuff on a unit (stage 5.16): UNIT_FIELD_AURA (48 spell ids: slots 0-31 buffs, 32-47 debuffs),
-// AURAFLAGS (4 bits per slot, 1 = cancelable), AURAAPPLICATIONS (a byte per slot: stacks - 1); the time left is
-// known for our own auras only (SMSG_UPDATE_AURA_DURATION).
+// A buff or debuff decoded from WotLK's SMSG_AURA_UPDATE payload.
 struct AuraView {
     uint8_t slot = 0;
     uint32_t spell = 0;
@@ -888,9 +888,13 @@ public:
     void cancelCast(uint32_t nowMs);                  // CMSG_CANCEL_CAST
     // UI stage 10: a spell at a point on the ground (TARGET_FLAG_DEST_LOCATION 0x40 + x, y, z); same checks as castSpell.
     bool castSpellAt(uint32_t spell, const float pos[3], uint32_t nowMs);
-    // Own power for the bar: type from UNIT_BYTES_0 byte 3 (0 mana, 1 rage, 2 focus, 3 energy); rage is x10 on the wire.
+    // Own power from UNIT_BYTES_0: WotLK types 0-6; runes (5) use their own six-slot HUD, runic power is 6.
+    // Rage (1) is x10 on the wire.
     struct Power { uint8_t type; uint32_t cur, max; };
     Power selfPower() const;
+    struct RuneState { uint8_t type = 0, progress = 255; bool seen = false; };
+    std::array<RuneState, 6> runes{};
+    uint32_t runePowerMask = 0, runePowerMs = 0;
     // ---- auras (stage 5.16)
     std::vector<AuraView> auras(const WorldObject& o, uint32_t nowMs) const;   // buffs first, then debuffs
     bool cancelAura(uint32_t spell, uint32_t nowMs);   // CMSG_CANCEL_AURA (our own buffs that can be cancelled)
@@ -1185,8 +1189,6 @@ private:
     std::unordered_map<uint32_t, uint32_t> categoryEnd_, categoryLen_;   // cooldown category -> local time / length
     std::unordered_map<uint32_t, uint32_t> spellCategory_;               // spell -> category (Spell.dbc, items, the server)
     std::unordered_map<uint64_t, CastState> unitCasts_;    // other units' casts (SMSG_SPELL_START with a cast time)
-    struct AuraTime { uint32_t spell = 0, endMs = 0; };
-    std::array<AuraTime, kAuraSlots> auraTime_{};          // our auras: SMSG_UPDATE_AURA_DURATION
     uint32_t gcdEnd_ = 0;
     void send(uint16_t opcode, const Bytes& data, uint32_t nowMs);
     void sendActiveMover(uint32_t nowMs);   // CMSG_SET_ACTIVE_MOVER (self)

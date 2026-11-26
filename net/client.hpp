@@ -1,4 +1,4 @@
-// client.hpp — vanilla 1.12.1 (build 5875) login: realmd auth + world session.
+// client.hpp — WotLK 3.3.5a (build 12340) login: realmd auth + world session.
 //
 // Both clients are polled state machines: call update() every frame, read
 // state()/error(). 6.55: nothing blocks - the TCP connect too is polled (state Connecting, 15 s at most); only a server
@@ -16,12 +16,8 @@
 namespace w3n {
 
 struct ClientVersion {
-    uint8_t major = 1, minor = 12, patch = 1;
-    uint16_t build = 5875;
-    uint8_t authProtocol = 3;     // what the real 1.12.1 client sends; vMaNGOS also accepts 8
-    uint16_t worldBuild = 0;      // CMSG_AUTH_SESSION's build; 0 = 'build'. 6.58: Turtle-type servers (1.18.1) log in with 7272
-                                  // and keep 5875 for the world (turtle-agent, tortoise-wow realmd)
-    static ClientVersion turtle() { ClientVersion v; v.minor = 18; v.build = 7272; v.worldBuild = 5875; return v; }
+    uint8_t major = 3, minor = 3, patch = 5;
+    uint16_t build = 12340;
     std::string locale = "enUS";
 };
 
@@ -109,7 +105,7 @@ public:
                        InWorld, LoggingOut, Done, Failed };
 
     bool start(const std::string& hostPort, const std::string& account, const Bytes& sessionKey,
-               const ClientVersion& ver = ClientVersion());
+               const ClientVersion& ver = ClientVersion(), uint32_t realmId = 0);
     void update();
     void requestCharacters();
     void login(uint64_t guid);
@@ -128,8 +124,7 @@ public:
 
     // ---- offline / test transport -------------------------------------------------------------
     // When packetSink is set, every CMSG is handed to it instead of a socket. This is the internal
-    // logical message boundary between the existing client and OfflineWorldCore: no TCP server, no
-    // SRP, no header cipher, but exactly the same opcodes and payloads a 1.12.1 realm would see.
+    // logical message boundary between the client and OfflineWorldCore: no TCP server, no SRP, no cipher.
     std::function<void(uint16_t opcode, const Bytes& payload)> packetSink;
     // Enter the world without a handshake. The caller supplies what LOGIN_VERIFY_WORLD and the
     // character list would have said. mapId/pos/orient follow the same coordinate convention.
@@ -184,6 +179,7 @@ private:
     State state_ = State::Idle;
     std::string err_, account_;
     ClientVersion ver_;
+    uint32_t realmId_ = 0;
     Bytes K_, inBuf_;
     HeaderCipher cipher_;
     size_t headerDecrypted_ = 0;   // bytes of the current header already decrypted

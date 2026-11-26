@@ -248,13 +248,13 @@ std::string DataDir::normalize(const std::string& gamePath) {
 bool DataDir::open(const std::string& root) {
     std::error_code ec;
     if (!fs::is_directory(root, ec)) return false;
+    // Archive names and precedence are WotLK 3.3.5a-specific in openMpq(); pack writing stays version-agnostic.
     for (auto& e : fs::directory_iterator(root, ec)) {
         std::string ext = e.path().extension().string();
         for (char& c : ext) c = (char)std::tolower((unsigned char)c);
         if (ext == ".mpq") {
             const bool ok = openMpq(root);
-            // 6.98: loose files next to the archives (a Turtle WoW client has Data\Interface\...): read when no archive has
-            // the file. Only the folders that hold such overrides, not the whole tree.
+            // Loose Interface files beside the archives remain optional overrides; archived data wins.
             for (const char* sub : {"Interface", "interface"}) {
                 const fs::path d = fs::path(root) / sub;
                 if (!fs::is_directory(d, ec)) continue;

@@ -10,9 +10,8 @@
 //   * models: weapons and shields (Item\ObjectComponents\Weapon / Shield), shoulders (Shoulder, left + right),
 //     helmets (Head, one model per race and sex: <name>_HuM.m2 ...), baked as static MODL with the display's texture.
 //
-// ItemDisplayInfo (vanilla, 23 fields; WoWee classic dbc_layouts): ID 0, LeftModel 1, RightModel 2, LeftModelTexture 3,
-// RightModelTexture 4, Icon 5, GeosetGroup1..3 6..8, Flags 9, SpellVisualID 10, GroupSoundID 11, HelmetGeosetVis 12/13,
-// textures ArmUpper..Foot 14..21, ItemVisual 22.
+// ItemDisplayInfo (WotLK 3.3.5a): model names 1..2, model textures 3..4, icons 5..6, geoset groups 7..9,
+// helmet visibility 13..14, and body texture names 15..22.
 #include "conv.h"
 #include "w3d_character.h"
 
@@ -33,11 +32,12 @@ const Rect kRegion[W3D_ITEM_REGIONS] = {{0, 0, 128, 64},    {0, 64, 128, 64},   
                                        {128, 64, 128, 32}, {128, 96, 128, 64}, {128, 160, 128, 64}, {128, 224, 128, 32}};
 const char* const kRegionDir[W3D_ITEM_REGIONS] = {"ArmUpperTexture", "ArmLowerTexture", "HandTexture",       "TorsoUpperTexture",
                                                   "TorsoLowerTexture", "LegUpperTexture", "LegLowerTexture", "FootTexture"};
-const uint32_t kColTex[W3D_ITEM_REGIONS] = {14, 15, 16, 17, 18, 19, 20, 21};
+const uint32_t kColTex[W3D_ITEM_REGIONS] = {15, 16, 17, 18, 19, 20, 21, 22};
 
-// Suffix of the racial models and textures (Helm_Plate_B_01_HuM.m2 ...), races 1..8.
-const char* const kRaceSuffix[9][2] = {{"", ""},        {"_HuM", "_HuF"}, {"_OrM", "_OrF"}, {"_DwM", "_DwF"}, {"_NiM", "_NiF"},
-                                      {"_ScM", "_ScF"}, {"_TaM", "_TaF"}, {"_GnM", "_GnF"}, {"_TrM", "_TrF"}};
+// Suffix of the racial models and textures (Helm_Plate_B_01_HuM.m2 ...); race 9 is unused in WotLK.
+const char* const kRaceSuffix[12][2] = {
+    {"", ""},       {"_HuM", "_HuF"}, {"_OrM", "_OrF"}, {"_DwM", "_DwF"}, {"_NiM", "_NiF"}, {"_ScM", "_ScF"},
+    {"_TaM", "_TaF"}, {"_GnM", "_GnF"}, {"_TrM", "_TrF"}, {"", ""}, {"_BeM", "_BeF"}, {"_DrM", "_DrF"}};
 
 std::string stripExt(std::string n) {
     size_t d = n.rfind('.');
@@ -50,44 +50,17 @@ bool exists(const DataDir& data, const std::string& path) {
     return data.read(path, b);
 }
 
-// Columns of HelmetGeosetVis in ItemDisplayInfo: the columns whose non-zero values are all ids of HelmetGeosetVisData
-// (WoWee findVisColumns); 12 and 13 in the 23-field vanilla table.
-void findVisColumns(const DbcTable& idi, const DbcTable& vis, uint32_t& male, uint32_t& female) {
-    male = female = 0xFFFFFFFFu;
-    std::set<uint32_t> ids;
-    for (uint32_t r = 0; r < vis.records; ++r) ids.insert(vis.u32(r, 0));
-    if (ids.empty()) return;
-    const uint32_t step = std::max(1u, idi.records / 400u);
-    for (uint32_t c = 0; c < idi.fields; ++c) {
-        uint32_t nonZero = 0, valid = 0;
-        for (uint32_t r = 0; r < idi.records; r += step) {
-            uint32_t v = idi.u32(r, c);
-            if (!v) continue;
-            ++nonZero;
-            valid += ids.count(v) ? 1 : 0;
-        }
-        if (nonZero >= 8 && valid == nonZero) {
-            if (male == 0xFFFFFFFFu) male = c;
-            else { female = c; break; }
-        }
-    }
-}
-
 }  // namespace
 
 bool convertItems(const Options& o, const DataDir& data, PackWriter& pack, ConvStats& st) {
     DbcTable idi, vis;
-    if (!idi.load(data, "ItemDisplayInfo.dbc") || idi.fields < 22) {
-        std::fprintf(stderr, "items: ItemDisplayInfo.dbc not found (or not the vanilla layout), no worn items\n");
+    if (!idi.load(data, "ItemDisplayInfo.dbc") || idi.fields <= 24) {
+        std::fprintf(stderr, "items: ItemDisplayInfo.dbc not found (or not the WotLK 3.3.5a layout), no worn items\n");
         return false;
     }
     const bool haveVis = vis.load(data, "HelmetGeosetVisData.dbc");
-    uint32_t visCol[2] = {12, 13};
-    if (haveVis) {
-        uint32_t m, f;
-        findVisColumns(idi, vis, m, f);
-        if (m != 0xFFFFFFFFu) { visCol[0] = m; visCol[1] = f != 0xFFFFFFFFu ? f : m; }
-    }
+    constexpr uint32_t visCol[2] = {dbc335a::itemDisplayInfo::HelmetGeosetVisID,
+                                    dbc335a::itemDisplayInfo::HelmetGeosetVisID + 1};
     std::map<uint32_t, bool> visHidesHair;   // HelmetGeosetVisData id -> any mask set (WoWee helmHidesHair)
     for (uint32_t r = 0; haveVis && r < vis.records; ++r) {
         bool any = false;
@@ -165,7 +138,7 @@ bool convertItems(const Options& o, const DataDir& data, PackWriter& pack, ConvS
         W3dItemDisplay d{};
         bool any = false;
         for (int k = 0; k < 3; ++k) {
-            d.gg[k] = (uint8_t)std::min<uint32_t>(idi.u32(r, 6 + k), 20);
+            d.gg[k] = (uint8_t)std::min<uint32_t>(idi.u32(r, dbc335a::itemDisplayInfo::GeosetGroup + k), 20);
             any |= d.gg[k] != 0;
         }
         for (int reg = 0; reg < W3D_ITEM_REGIONS; ++reg) {
@@ -202,7 +175,7 @@ bool convertItems(const Options& o, const DataDir& data, PackWriter& pack, ConvS
                 d.model[0] = addItemModel(pack, data, m2, tex, o, st);
                 any |= d.model[0] != 0;
             } else {
-                // shoulders: left and right models, never racial in vanilla (the Human male one is the fallback)
+                // shoulders use generic models; racial variants below are for head-slot helmets only.
                 for (int side = 0; side < 2; ++side) {
                     const std::string& name = side ? modelR : modelL;
                     if (name.empty()) continue;
@@ -213,10 +186,11 @@ bool convertItems(const Options& o, const DataDir& data, PackWriter& pack, ConvS
                     d.model[side] = addItemModel(pack, data, sm, shTex, o, st);
                     any |= d.model[side] != 0;
                 }
-                // helmets: Head\<name><_HuM>.m2 per race and sex; the texture <tex><_HuM>.blp, else <tex>.blp
+                // helmets: Head\<name><race suffix>.m2 per playable WotLK race and sex; texture suffix, then bare fallback.
                 if (!d.model[0] && !d.model[1] && !modelL.empty()) {
                     bool haveAny = false;
-                    for (uint32_t race = 1; race <= 8; ++race)
+                    for (uint32_t race = 1; race <= 11; ++race) {
+                        if (race == 9) continue;
                         for (uint32_t sex = 0; sex < 2; ++sex) {
                             const std::string sfx = kRaceSuffix[race][sex];
                             std::string hm = findModel(modelL + sfx, "Head");
@@ -227,6 +201,7 @@ bool convertItems(const Options& o, const DataDir& data, PackWriter& pack, ConvS
                             d.helm[(race - 1) * 2 + sex] = id;
                             haveAny |= id != 0;
                         }
+                    }
                     if (haveAny) {
                         any = true;
                         ++st.itemHelms;

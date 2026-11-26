@@ -1,9 +1,9 @@
-// w3dlogin — PC test client for the network code: logs into a vanilla 1.12.1
+// w3dlogin — PC test client for the network code: logs into a WotLK 3.3.5a
 // server exactly like the 3DS client (same sources), enters the world with a
 // character and (stage 5) walks, tracks world objects and records packets.
 //
 //   w3dlogin <server[:3724]> <account> [password] [--realm N] [--char N] [--stay SEC]
-//            [--protocol 3|8] [--turtle] [--ping SEC] [--walk] [--log FILE] [--objects N] [--out FILE]
+//            [--ping SEC] [--walk] [--log FILE] [--objects N] [--out FILE]
 //   w3dlogin --replay FILE [--objects N]     parse a recorded session offline
 //   --walk     walk a closed ~10 yd route at server speed (watch it from a second client)
 //   --fight N  target the nearest living unit whose name contains N, walk up to it, auto-attack until it
@@ -759,7 +759,7 @@ static void printSurvey(GameSession& g, const float pos[3], uint32_t ms) {
         const WorldObject& o = *r.o;
         const char* verb = g.useVerb(o);
         if (o.type == ObjType::GameObject) {
-            say("  %5.1f yd  object %-26.26s type %2u  %s%s\n", r.d, o.name.empty() ? "?" : o.name.c_str(), o.field(UF::GAMEOBJECT_TYPE_ID),
+            say("  %5.1f yd  object %-26.26s type %2u  %s%s\n", r.d, o.name.empty() ? "?" : o.name.c_str(), o.goType(),
                 verb ? verb : "", g.questGiverStatus(o.guid) ? (std::string(" mark ") + questMarkGlyph(g.questGiverStatus(o.guid))).c_str() : "");
             continue;
         }
@@ -849,7 +849,7 @@ int main(int argc, char** argv) {
     }
     if (argc < 3) {
         sayLine("usage: w3dlogin <server[:port]> <account> [password] [--realm N] [--char N] [--stay SEC]\n"
-                  "                [--protocol 3|8] [--turtle] [--ping SEC] [--walk] [--fight NAME] [--say TEXT]... [--cast ID]... [--spells FILE] [--log FILE]\n"
+                  "                [--ping SEC] [--walk] [--fight NAME] [--say TEXT]... [--cast ID]... [--spells FILE] [--log FILE]\n"
                   "                [--factions FILE] [--life] [--trade] [--party] [--survey]\n"
                   "                [--objects N] [--out FILE]\n"
                   "       w3dlogin --replay FILE [--objects N] [--out FILE]");
@@ -874,8 +874,6 @@ int main(int argc, char** argv) {
         else if (a == "--char") charIdx = atoi(next().c_str());
         else if (a == "--stay") stay = atoi(next().c_str());
         else if (a == "--ping") pingSec = atoi(next().c_str());
-        else if (a == "--protocol") ver.authProtocol = (uint8_t)atoi(next().c_str());
-        else if (a == "--turtle") { const uint8_t pr = ver.authProtocol; ver = ClientVersion::turtle(); ver.authProtocol = pr; }   // 6.58
         else if (a == "--walk") walk = true;
         else if (a == "--fight") { fight = true; fightName = next(); }
         else if (a == "--life") { lifeTest = true; autoLoot = false; }
@@ -925,7 +923,7 @@ int main(int argc, char** argv) {
     WorldClient world;
     world.pingIntervalMs = (uint32_t)pingSec * 1000;
     say("connecting to realm '%s' at %s ...\n", realm.name.c_str(), realm.address.c_str());
-    if (!world.start(realm.address, auth.account(), auth.sessionKey(), ver)) {
+    if (!world.start(realm.address, auth.account(), auth.sessionKey(), ver, realm.id)) {
         say("FAILED: %s\n", world.error().c_str());
         return 4;
     }

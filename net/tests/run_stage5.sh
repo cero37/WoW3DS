@@ -11,6 +11,10 @@ SRC="$N/client.cpp $N/crypto.cpp $N/socket.cpp $N/inflate.cpp $N/movement.cpp $N
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined"
 g++ -std=c++20 $SAN -Wall -Wextra "$N/tools/w3dlogin.cpp" $SRC -o "$OUT/w3dlogin"
 g++ -std=c++20 $SAN -Wall "$N/tests/objects_test.cpp" $SRC -o "$OUT/objects_test"
+g++ -std=c++20 $SAN -Wall -Wextra "$N/tests/runes_test.cpp" $SRC -o "$OUT/runes_test"
+"$OUT/runes_test"
+g++ -std=c++20 $SAN -Wall -Wextra "$N/tests/glyph_table_test.cpp" "$N/tables.cpp" -o "$OUT/glyph_table_test"
+"$OUT/glyph_table_test"
 
 g++ -std=c++20 $SAN "$N/tests/text_test.cpp" -o "$OUT/text_test" && "$OUT/text_test"
 python3 "$N/tests/build_objects_log.py" "$OUT/obj.w3dl" "$OUT/obj.expect"

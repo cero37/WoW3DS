@@ -55,11 +55,19 @@ void setLanguage(int lang) {
     g_loadedLang = lang;
     g_tr.clear();
     if (lang <= 1) return;
-    char path[128];
-    snprintf(path, sizeof path, "sdmc:/3ds/w3dproto/lang_%s.txt", kLangCodes[lang]);
-    if (loadLangFile(path)) return;
-    snprintf(path, sizeof path, "romfs:/lang_%s.txt", kLangCodes[lang]);
-    loadLangFile(path);   // no file: English texts, the chosen language is kept in pad.txt
+    const char* codes[2] = {kLangCodes[lang], nullptr};
+    if (lang == kLangSpanish) {
+        codes[0] = "esMX";
+        codes[1] = "esES";
+    }
+    for (const char* root : {"sdmc:/3ds/w3dproto", "romfs:"}) {
+        for (const char* code : codes) {
+            if (!code) continue;
+            char path[128];
+            snprintf(path, sizeof path, "%s/lang_%s.txt", root, code);
+            if (loadLangFile(path)) return;
+        }
+    }   // no file: English texts, the chosen language is kept in pad.txt
 }
 
 const char* languageCode(int lang) { return lang >= 0 && lang < kLangCount ? kLangCodes[lang] : kLangCodes[0]; }
@@ -104,6 +112,8 @@ uint32_t powerColor(uint8_t type) {
         case 1: return hudRgba(220, 40, 40);
         case 2: return hudRgba(220, 130, 40);
         case 3: return hudRgba(240, 225, 40);
+        case 4: return hudRgba(80, 210, 80);
+        case 6: return hudRgba(80, 190, 245);
         default: return hudRgba(50, 100, 245);
     }
 }

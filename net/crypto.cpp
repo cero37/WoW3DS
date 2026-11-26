@@ -71,6 +71,32 @@ Bytes Sha1::final() {
 Bytes sha1(const Bytes& b) { Sha1 s; s.update(b); return s.final(); }
 Bytes sha1(const std::string& str) { Sha1 s; s.update(str); return s.final(); }
 
+static Bytes hmacSha1(const Bytes& key, const uint8_t* message, size_t length) {
+    uint8_t normalized[64] = {};
+    if (key.size() > sizeof normalized) {
+        Bytes digest = sha1(key);
+        memcpy(normalized, digest.data(), digest.size());
+    } else if (!key.empty()) {
+        memcpy(normalized, key.data(), key.size());
+    }
+
+    uint8_t innerPad[64], outerPad[64];
+    for (size_t i = 0; i < sizeof normalized; ++i) {
+        innerPad[i] = normalized[i] ^ 0x36;
+        outerPad[i] = normalized[i] ^ 0x5C;
+    }
+
+    Sha1 inner;
+    inner.update(innerPad, sizeof innerPad);
+    inner.update(message, length);
+    Bytes innerDigest = inner.final();
+
+    Sha1 outer;
+    outer.update(outerPad, sizeof outerPad);
+    outer.update(innerDigest);
+    return outer.final();
+}
+
 // ================================================================== BigNum
 BigNum::BigNum(uint32_t v) { if (v) w_.push_back(v); }
 
@@ -264,23 +290,51 @@ bool srpCompute(const std::string& account, const std::string& password, const B
 }
 
 // ================================================================== header cipher
-void HeaderCipher::encrypt(uint8_t* d, size_t n) {
-    if (!on_) return;
-    for (size_t i = 0; i < n; ++i) {
-        uint8_t x = (uint8_t)((d[i] ^ key_[si_]) + sp_);
-        si_ = (si_ + 1) % key_.size();
-        d[i] = sp_ = x;
+void HeaderCipher::Arc4State::init(const Bytes& key) {
+    for (size_t i = 0; i < 256; ++i) state[i] = (uint8_t)i;
+    i = j = 0;
+    if (key.empty()) return;
+
+    uint8_t k = 0;
+    for (size_t n = 0; n < 256; ++n) {
+        k = (uint8_t)(k + state[n] + key[n % key.size()]);
+        std::swap(state[n], state[k]);
+    }
+    uint8_t discard[256] = {};
+    for (size_t n = 0; n < 4; ++n) apply(discard, sizeof discard);
+}
+
+void HeaderCipher::Arc4State::apply(uint8_t* data, size_t len) {
+    for (size_t n = 0; n < len; ++n) {
+        i = (uint8_t)(i + 1);
+        j = (uint8_t)(j + state[i]);
+        std::swap(state[i], state[j]);
+        data[n] ^= state[(uint8_t)(state[i] + state[j])];
     }
 }
 
+void HeaderCipher::init(const Bytes& sessionKey) {
+    static const uint8_t clientToServerSeed[] = {
+        0xC2, 0xB3, 0x72, 0x3C, 0xC6, 0xAE, 0xD9, 0xB5,
+        0x34, 0x3C, 0x53, 0xEE, 0x2F, 0x43, 0x67, 0xCE
+    };
+    static const uint8_t serverToClientSeed[] = {
+        0xCC, 0x98, 0xAE, 0x04, 0xE8, 0x97, 0xEA, 0xCA,
+        0x12, 0xDD, 0xC0, 0x93, 0x42, 0x91, 0x53, 0x57
+    };
+    Bytes sendKey = hmacSha1(sessionKey, clientToServerSeed, sizeof clientToServerSeed);
+    Bytes receiveKey = hmacSha1(sessionKey, serverToClientSeed, sizeof serverToClientSeed);
+    send_.init(sendKey);
+    receive_.init(receiveKey);
+    on_ = !sessionKey.empty();
+}
+
+void HeaderCipher::encrypt(uint8_t* d, size_t n) {
+    if (on_) send_.apply(d, n);
+}
+
 void HeaderCipher::decrypt(uint8_t* d, size_t n) {
-    if (!on_) return;
-    for (size_t i = 0; i < n; ++i) {
-        uint8_t e = d[i];
-        d[i] = (uint8_t)((e - rp_) ^ key_[ri_]);
-        ri_ = (ri_ + 1) % key_.size();
-        rp_ = e;
-    }
+    if (on_) receive_.apply(d, n);
 }
 
 // ================================================================== misc

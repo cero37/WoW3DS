@@ -21,30 +21,6 @@ namespace w3d {
 namespace {
 struct KitFx { uint32_t effect[2] = {0, 0}; uint8_t slot[2] = {0, 0}; };
 
-// The column of Spell.dbc holding the missile speed: a float column where the spells whose visual has a missile mostly
-// say 5..100 yd/s and the others mostly 0 (1.12 has no layout file here; the column is found, not assumed).
-int speedColumn(const DbcTable& spell, uint32_t visCol, const std::set<uint32_t>& missileVisuals) {
-    int best = -1;
-    double bestScore = 0;
-    for (uint32_t c = 10; c < std::min<uint32_t>(spell.fields, visCol); ++c) {
-        uint32_t withM = 0, okM = 0, without = 0, zeroW = 0;
-        for (uint32_t r = 0; r < spell.records; ++r) {
-            const float v = spell.f32(r, c);
-            if (missileVisuals.count(spell.u32(r, visCol))) {
-                ++withM;
-                okM += std::isfinite(v) && v >= 5.0f && v <= 100.0f;
-            } else {
-                ++without;
-                zeroW += v == 0.0f;
-            }
-        }
-        if (withM < 10 || !without) continue;
-        const double a = (double)okM / withM, z = (double)zeroW / without;
-        if (a < 0.6 || z < 0.8) continue;
-        if (a + z > bestScore) { bestScore = a + z; best = (int)c; }
-    }
-    return best;
-}
 }  // namespace
 
 bool convertSpellEffects(const Options& oIn, const DataDir& data, PackWriter& pack, ConvStats& st) {
@@ -130,7 +106,6 @@ bool convertSpellEffects(const Options& oIn, const DataDir& data, PackWriter& pa
     }
     struct Vis { uint32_t id; KitFx st[W3D_SFX_STAGES]; };
     std::map<uint32_t, Vis> visuals;
-    std::set<uint32_t> missileVisuals;
     for (uint32_t r = 0; r < sv.records; ++r) {
         Vis v{};
         v.id = sv.u32(r, 0);
@@ -146,23 +121,20 @@ bool convertSpellEffects(const Options& oIn, const DataDir& data, PackWriter& pa
         if (!empty(mis) && names.count(mis)) {
             v.st[W3D_SFX_MISSILE].effect[0] = mis;
             v.st[W3D_SFX_MISSILE].slot[0] = W3D_SLOT_NONE;
-            missileVisuals.insert(v.id);
             any = true;
         }
         if (any && v.id) visuals[v.id] = v;
     }
     std::printf("  spell effects: SpellVisual missile column %d, channel kit column %d\n", misCol, chanCol);
-    // ---- Spell.dbc: spell -> visual (5 columns before the name, as the sounds), missile speed
-    int nameCol = spellNameColumn(spell);
-    if (nameCol < 0) nameCol = 120;
-    const uint32_t visCol = (uint32_t)nameCol - 5;
-    const int spCol = speedColumn(spell, visCol, missileVisuals);
+    // ---- Spell.dbc: SpellVisualID[0] and Speed use their WotLK 3.3.5a columns.
+    constexpr uint32_t visCol = dbc335a::spell::SpellVisualID;
+    constexpr uint32_t spCol = dbc335a::spell::Speed;
     std::map<uint32_t, std::pair<uint32_t, float>> spells;   // spell -> (visual, speed)
     std::set<uint32_t> usedVisuals;
     for (uint32_t r = 0; r < spell.records; ++r) {
         const uint32_t v = spell.u32(r, visCol);
         if (!visuals.count(v)) continue;
-        float sp = spCol >= 0 ? spell.f32(r, (uint32_t)spCol) : 0.0f;
+        float sp = spell.f32(r, spCol);
         if (!(sp > 0.0f && sp < 200.0f)) sp = 0.0f;
         spells[spell.u32(r, 0)] = {v, sp};
         usedVisuals.insert(v);
@@ -291,8 +263,11 @@ int explainSpells(const DataDir& data, const std::vector<uint32_t>& ids) {
                 spell.records, spell.fields, sv.records, sv.fields, svk.records, svk.fields, fxn.records, fxn.fields);
     if (!ok) { std::puts("a table is missing"); return 1; }
     int nameCol = spellNameColumn(spell);
-    std::printf("Spell name column %d -> visual column %d\n", nameCol, nameCol - 5);
-    if (nameCol < 0) nameCol = 120;
+    if (nameCol < 0) {
+        std::puts("Spell.dbc is not the WotLK 3.3.5a layout");
+        return 1;
+    }
+    std::printf("Spell name column %d -> visual column %u\n", nameCol, dbc335a::spell::SpellVisualID);
     auto row = [](const DbcTable& t, uint32_t id) -> int {
         for (uint32_t r = 0; r < t.records; ++r) if (t.u32(r, 0) == id) return (int)r;
         return -1;
@@ -341,8 +316,8 @@ int explainSpells(const DataDir& data, const std::vector<uint32_t>& ids) {
         const int r = row(spell, id);
         if (r < 0) { std::puts("  not in Spell.dbc"); continue; }
         std::printf("  name '%s'\n", spell.loc((uint32_t)r, (uint32_t)nameCol).c_str());
-        dump("Spell", spell, r, (uint32_t)nameCol - 8, (uint32_t)nameCol);
-        const uint32_t vis = spell.u32((uint32_t)r, (uint32_t)nameCol - 5);
+        dump("Spell", spell, r, dbc335a::spell::SpellVisualID, dbc335a::spell::SpellVisualID + 2);
+        const uint32_t vis = spell.u32((uint32_t)r, dbc335a::spell::SpellVisualID);
         const int vr = row(sv, vis);
         if (vr < 0) { std::printf("  visual %u: not in SpellVisual.dbc\n", vis); continue; }
         dump("SpellVisual", sv, vr, 0, 16);

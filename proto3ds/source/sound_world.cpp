@@ -24,8 +24,8 @@ const snd::CreatureSounds* SoundWorld::soundsOf(const WorldObject& o) const {
     return c;
 }
 
-// Weapon of the attacker: creatures carry class / subclass in UNIT_VIRTUAL_ITEM_INFO (byte 0 class 2 = weapon,
-// byte 1 subclass), players show their main hand (equipment slot 15) whose item we may know.
+// Weapon of the attacker: players show their main hand (equipment slot 15); 3.3.5a exposes only a creature's
+// virtual-item display ID, so use a sword as the fallback subclass when one is present.
 uint32_t SoundWorld::weaponSubclass(GameSession& g, const WorldObject& o) const {
     if (o.type == ObjType::Player) {
         const uint32_t entry = o.field((uint16_t)(UF::PLAYER_VISIBLE_ITEM_1_0 + 15 * UF::PLAYER_VISIBLE_ITEM_STRIDE));
@@ -33,9 +33,7 @@ uint32_t SoundWorld::weaponSubclass(GameSession& g, const WorldObject& o) const 
         const ItemInfo* it = g.itemInfoIfKnown(entry);
         return it && it->cls == 2 ? it->subclass : 7u;   // unknown yet: a one-handed sword
     }
-    const uint32_t info = o.field(UF::UNIT_VIRTUAL_ITEM_INFO);
-    if ((info & 0xFF) == 2) return (info >> 8) & 0xFF;
-    return ~0u;
+    return o.field(UF::UNIT_VIRTUAL_ITEM_SLOT_DISPLAY) ? 7u : ~0u;
 }
 
 // 7.03: our ranged weapon going off. Auto Shot, Shoot and Throw carry no sound in their spell data (the original plays the
