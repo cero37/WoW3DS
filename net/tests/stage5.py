@@ -154,7 +154,7 @@ class World5:
         blocks = []
         # self: CREATE_OBJECT2, SELF | ALL | LIVING, full player fields (incl. a high index)
         f = unit_fields(me, 0, 1, 60, 49); f[2] = 0x19; f[716] = 10; f[717] = 400; f[1281] = 5
-        f[36] = 1 | (1 << 8) | (0 << 16)          # UNIT_FIELD_BYTES_0: human warrior, male
+        f[23] = 1 | (1 << 8) | (0 << 16)          # UNIT_FIELD_BYTES_0: human warrior, male
         self.my_hp = 60
         blocks.append(create(me, 4, living_block(UF_SELF | UF_ALL, 0, SPAWN, 3.07), f, two=True))
         # items in the bags (type 1) - must be stored but not drawn
@@ -198,7 +198,7 @@ class World5:
             a = i / 60 * 2 * math.pi
             blocks.append(create(g, 3, living_block(UF_HIGHGUID, 0, (SPAWN[0] + 60 * math.cos(a), SPAWN[1] + 60 * math.sin(a), SPAWN[2]), a),
                                  unit_fields(g, 299, 2, 55, 903)))
-        blocks.append(values(CREATURE_GUID(299, 100), {22: 0}))      # one dies
+        blocks.append(values(CREATURE_GUID(299, 100), {24: 0}))      # one dies
         blocks.append(out_of_range([CREATURE_GUID(299, 158), CREATURE_GUID(299, 159)]))
         raw = update_packet(blocks)
         self.send(0x1F6, struct.pack("<I", len(raw)) + zlib.compress(raw, 6))
@@ -260,7 +260,7 @@ class World5:
     SPELLS = (78, 6603, 2457, 668, 9998, 9999)
     def send_spells(self):
         b = struct.pack("<BH", 0, len(self.SPELLS)) + b"".join(struct.pack("<IH", s, i) for i, s in enumerate(self.SPELLS))
-        b += struct.pack("<H", 1) + struct.pack("<HHHII", 2457, 0, 0, 0, 3000)      # Battle Stance not ready for 3 s
+        b += struct.pack("<H", 1) + struct.pack("<IHHII", 2457, 0, 0, 0, 3000)     # Battle Stance not ready for 3 s
         self.send(0x12A, b)
         bar = [0] * 120
         bar[0], bar[1], bar[2], bar[3], bar[4] = 6603, 78, 9999, 2457, (0x40 << 24) | 5   # slot 4 is a macro
