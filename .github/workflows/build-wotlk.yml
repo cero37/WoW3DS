@@ -22,7 +22,7 @@ jobs:
       - name: Build 3DSX
         working-directory: proto3ds
         run: |
-          make
+          make w3dproto.3dsx
 
       - name: Upload 3DS artifacts
         uses: actions/upload-artifact@v4
