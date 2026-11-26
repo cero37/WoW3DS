@@ -2,6 +2,7 @@
 #include "client.hpp"
 
 #include <cstring>
+#include <ctime>
 
 #include "wire.hpp"
 
@@ -259,6 +260,18 @@ bool WorldClient::start(const std::string& hostPort, const std::string& account,
     return true;
 }
 
+std::string WorldClient::statusStage() const {
+    switch (state_) {
+        case State::Connecting: return "connecting world";
+        case State::WaitChallenge: return "waiting auth_challenge";
+        case State::WaitAuthResponse: return "waiting auth_resp";
+        case State::WaitCharEnum: return "waiting char_enum";
+        case State::Failed: return err_;
+        case State::InQueue: return "waiting in login queue";
+        default: return "world state " + std::to_string((int)state_);
+    }
+}
+
 void WorldClient::send(uint32_t opcode, const Bytes& payload) {
     if (packetSink) {   // offline / test: the internal server-equivalent consumes it
         ++packetsOut_;
@@ -282,9 +295,9 @@ void WorldClient::send(uint32_t opcode, const Bytes& payload) {
 
 void WorldClient::requestCharacters() {
     tStep_ = nowMs();
-    send(CMSG_CHAR_ENUM, {});
     state_ = State::WaitCharEnum;
     deadline_ = nowMs() + kTimeoutMs;
+    send(CMSG_CHAR_ENUM, {});
 }
 
 void WorldClient::createCharacter(const CharCreateInfo& c) {
@@ -371,23 +384,37 @@ void WorldClient::update() {
         return;
     }
     bool alive = pump(sock_, inBuf_);
-    // Frame packets: server header = uint16 size (BE, includes opcode) + uint16 opcode,
-    // the 4 header bytes encrypted once the session is authenticated.
+    // ServerPktHeader: 2-byte size + 2-byte opcode, or a 3-byte size + 2-byte
+    // opcode when the first size byte has its high bit set. ARC4 covers the
+    // complete header in wire order.
     for (;;) {
         if (inBuf_.size() < 4) break;
         if (headerDecrypted_ < 4) {
             cipher_.decrypt(inBuf_.data() + headerDecrypted_, 4 - headerDecrypted_);
             headerDecrypted_ = 4;
         }
-        size_t size = ((size_t)inBuf_[0] << 8) | inBuf_[1];
+        const bool extended = (inBuf_[0] & 0x80) != 0;
+        const size_t headerSize = extended ? 5 : 4;
+        if (extended && inBuf_.size() < headerSize) break;
+        if (headerDecrypted_ < headerSize) {
+            cipher_.decrypt(inBuf_.data() + headerDecrypted_, headerSize - headerDecrypted_);
+            headerDecrypted_ = headerSize;
+        }
+
+        const size_t size = extended
+            ? (((size_t)(inBuf_[0] & 0x7F) << 16) | ((size_t)inBuf_[1] << 8) | inBuf_[2])
+            : (((size_t)inBuf_[0] << 8) | inBuf_[1]);
         if (size < 2) { fail("corrupt packet header"); return; }
-        if (inBuf_.size() < 2 + size) break;
+        const size_t payloadSize = size - 2;
+        const size_t packetSize = headerSize + payloadSize;
+        if (inBuf_.size() < packetSize) break;
         Packet p;
-        p.opcode = (uint16_t)(inBuf_[2] | (inBuf_[3] << 8));
-        p.data.assign(inBuf_.begin() + 4, inBuf_.begin() + 2 + (long)size);
-        inBuf_.erase(inBuf_.begin(), inBuf_.begin() + 2 + (long)size);
+        const size_t opcodeOffset = headerSize - 2;
+        p.opcode = (uint16_t)(inBuf_[opcodeOffset] | (inBuf_[opcodeOffset + 1] << 8));
+        p.data.assign(inBuf_.begin() + (long)headerSize, inBuf_.begin() + (long)packetSize);
+        inBuf_.erase(inBuf_.begin(), inBuf_.begin() + (long)packetSize);
         headerDecrypted_ = 0;
-        bytesIn_ += 2 + size;
+        bytesIn_ += packetSize;
         lastRecvMs_ = nowMs();
         ++packetsIn_;
         opCounts_[p.opcode]++;
@@ -451,10 +478,15 @@ void WorldClient::handle(Packet& p) {
             hin.raw(serverChallenge);
             hin.raw(K_);
             Bytes digest = sha1(hin.b);
-            // Empty addon list and timestamp, as expected by TrinityCore/AzerothCore.
+            // The official 3.3.5a client includes Blizzard_CombatLog and the
+            // last-banned-addon timestamp in the compressed AddonInfo block.
             Writer ad;
-            ad.u32(0);
-            ad.u32(0);
+            ad.u32(1);
+            ad.cstr("Blizzard_CombatLog");
+            ad.u8(0x01);
+            ad.u32(0x4C1C776D);  // public key CRC
+            ad.u32(0);           // URL CRC
+            ad.u32((uint32_t)std::time(nullptr));
             Writer w;
             w.u32(ver_.build);
             w.u32(0);   // login server ID
@@ -478,6 +510,11 @@ void WorldClient::handle(Packet& p) {
         case SMSG_AUTH_RESPONSE: {
             uint8_t code = r.u8();
             if (code == AUTH_OK) {
+                r.u32();  // billing time remaining
+                r.u8();   // billing flags
+                r.u32();  // billing time rested
+                r.u8();   // expansion (2 for WotLK)
+                if (r.bad) { fail("malformed WotLK auth response"); return; }
                 t_.worldAuth = (double)(nowMs() - tStep_);
                 requestCharacters();
             } else if (code == AUTH_WAIT_QUEUE) {

@@ -40,6 +40,20 @@ int main() {
         return 1;
     }
 
+    HeaderCipher extendedWhole;
+    HeaderCipher extendedSplit;
+    extendedWhole.init(sessionKey);
+    extendedSplit.init(sessionKey);
+    Bytes wholeHeader = {0x80, 0x00, 0x80, 0x3B, 0x00};
+    Bytes extendedSplitHeader = wholeHeader;
+    extendedWhole.encrypt(wholeHeader.data(), wholeHeader.size());
+    extendedSplit.encrypt(extendedSplitHeader.data(), 4);
+    extendedSplit.encrypt(extendedSplitHeader.data() + 4, 1);
+    if (extendedSplitHeader != wholeHeader) {
+        std::puts("WotLK ARC4 stream state was not preserved across an extended header");
+        return 1;
+    }
+
     std::puts("WotLK ARC4/HMAC known-answer tests passed");
     return 0;
 }

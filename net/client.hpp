@@ -136,6 +136,7 @@ public:
 
     State state() const { return state_; }
     const std::string& error() const { return err_; }
+    std::string statusStage() const;
     const std::vector<Character>& characters() const { return chars_; }
     uint32_t queuePosition() const { return queuePos_; }
     // Position from SMSG_LOGIN_VERIFY_WORLD (server coordinates == render coordinates).

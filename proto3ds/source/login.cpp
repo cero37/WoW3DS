@@ -454,8 +454,15 @@ void LoginFlow::network() {
             break;
         case Phase::WorldConnecting:
             world_.update();
-            if (world_.state() == w3n::WorldClient::State::Failed) { message(world_.error()); phase_ = Phase::RealmSelect; }
-            else if (world_.state() == w3n::WorldClient::State::InQueue) {
+            if (world_.state() == w3n::WorldClient::State::Failed) {
+                message(std::string(tr("Retrieving character list...", "Получение списка персонажей...")) + " (" +
+                        world_.statusStage() + ")");
+                phase_ = Phase::RealmSelect;
+            }
+            else if (world_.state() == w3n::WorldClient::State::Connecting) {
+                wait_ = std::string(tr("Connecting to ", "Соединение с ")) + model_.realmName + "... (" +
+                        world_.statusStage() + ")";
+            } else if (world_.state() == w3n::WorldClient::State::InQueue) {
                 char b[96];
                 snprintf(b, sizeof b, "%s %u", tr("Position in queue:", "Место в очереди:"), (unsigned)world_.queuePosition());
                 wait_ = b;
@@ -465,14 +472,20 @@ void LoginFlow::network() {
                 ui_.character = 0;
                 selectByName(lastChar_);
             } else if (world_.state() != w3n::WorldClient::State::Connecting) {   // (6.55: "Connecting to ..." until then)
-                wait_ = tr("Retrieving character list...", "Получение списка персонажей...");
+                wait_ = std::string(tr("Retrieving character list...", "Получение списка персонажей...")) + " (" +
+                        world_.statusStage() + ")";
             }
             break;
         case Phase::CharSelect:
         case Phase::CharCreate: {
             world_.update();
             if (world_.state() == w3n::WorldClient::State::Failed) {
-                message(std::string(tr("Disconnected: ", "Соединение потеряно: ")) + world_.error());
+                if (busy_ == Busy::List) {
+                    message(std::string(tr("Retrieving character list...", "Получение списка персонажей...")) + " (" +
+                            world_.statusStage() + ")");
+                } else {
+                    message(std::string(tr("Disconnected: ", "Соединение потеряно: ")) + world_.error());
+                }
                 phase_ = Phase::Menu;
                 break;
             }
@@ -481,7 +494,8 @@ void LoginFlow::network() {
                 if (r == w3n::CHAR_CREATE_SUCCESS) {
                     selectAfterList_ = ui_.create.name;
                     busy_ = Busy::List;
-                    wait_ = tr("Retrieving character list...", "Получение списка персонажей...");
+                    wait_ = std::string(tr("Retrieving character list...", "Получение списка персонажей...")) + " (" +
+                            world_.statusStage() + ")";
                 } else {
                     message(w3n::charCreateResultText((uint8_t)r));
                 }
@@ -504,6 +518,9 @@ void LoginFlow::network() {
                 if (!selectAfterList_.empty()) selectByName(selectAfterList_);
                 selectAfterList_.clear();
                 ui_.touched();
+            } else if (busy_ == Busy::List) {
+                wait_ = std::string(tr("Retrieving character list...", "Получение списка персонажей...")) + " (" +
+                        world_.statusStage() + ")";
             }
             if ((busy_ == Busy::Create || busy_ == Busy::Delete) && w3n::nowMs() - waitSince_ > 15000)
                 message(tr("The server did not answer.", "Сервер не ответил."));
