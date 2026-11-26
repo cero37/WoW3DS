@@ -207,7 +207,7 @@ static bool snapToGround(const w3n::WorldObject& o, CreatureSeen& c, uint32_t no
     m.seenMs = nowMs ? nowMs : 1;
     m.frame = g_groundFrame;
     const uint32_t kNoSnap = w3n::MoveFlag::Flying | w3n::MoveFlag::CanFly | w3n::MoveFlag::Levitating | w3n::MoveFlag::Swimming |
-                             w3n::MoveFlag::FixedZ | w3n::MoveFlag::OnTransport;
+                             w3n::MoveFlag::OnTransport;
     if (o.carried || o.taxiFlight() || (o.mv.flags & kNoSnap) || (o.pathActive && o.pathSmooth) || c.swimming || c.flying ||
         c.mountDisplay) {
         m.have = m.init = false;
