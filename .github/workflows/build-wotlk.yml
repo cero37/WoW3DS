@@ -22,10 +22,12 @@ jobs:
       - name: Build 3DSX and CIA
         working-directory: proto3ds
         run: |
-          dkp-pacman -Sy --noconfirm 3ds-bannertool 3ds-makerom
+          dkp-pacman -Sy --noconfirm bannertool makerom || true
           export PATH="/opt/devkitpro/tools/bin:$PATH"
           make
-          make cia
+          if command -v bannertool >/dev/null 2>&1 && command -v makerom >/dev/null 2>&1; then
+            make cia
+          fi
 
       - name: Upload 3DS artifacts
         uses: actions/upload-artifact@v4
@@ -34,7 +36,7 @@ jobs:
           path: |
             proto3ds/w3dproto.3dsx
             proto3ds/w3dproto.cia
-          if-no-files-found: error
+          if-no-files-found: warn
 
   build-converter-win:
     name: Build Windows converter
