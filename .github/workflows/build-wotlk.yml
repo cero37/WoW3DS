@@ -1,0 +1,78 @@
+name: Build WotLK 3.3.5a
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-3ds:
+    name: Build 3DS client
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install devkitPro packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates wget
+          wget -q https://apt.devkitpro.org/install-devkitpro-pacman -O /tmp/install-devkitpro-pacman
+          sudo dpkg -i /tmp/install-devkitpro-pacman
+          sudo dkp-pacman -Syu --noconfirm
+          sudo dkp-pacman -S --noconfirm 3ds-dev 3ds-bannertool 3ds-makerom
+
+      - name: Add devkitPro tools to PATH
+        run: |
+          echo "/opt/devkitpro/tools/bin" >> "$GITHUB_PATH"
+          echo "/opt/devkitpro/devkitARM/bin" >> "$GITHUB_PATH"
+
+      - name: Build 3DSX and CIA
+        working-directory: proto3ds
+        env:
+          DEVKITPRO: /opt/devkitpro
+          DEVKITARM: /opt/devkitpro/devkitARM
+        run: |
+          make
+          make cia
+
+      - name: Upload 3DS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wotlk-3ds
+          path: |
+            proto3ds/w3dproto.3dsx
+            proto3ds/w3dproto.cia
+          if-no-files-found: error
+
+  build-converter-win:
+    name: Build Windows converter
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure Release build with StormLib
+        run: >-
+          cmake -S converter -B converter/build -A x64
+          -DCMAKE_BUILD_TYPE=Release
+          -DW3D_STORMLIB=ON
+          -DW3D_CASC=OFF
+          -DW3D_TESTS=OFF
+
+      - name: Build converter and GUI
+        run: cmake --build converter/build --config Release --target w3dconv w3dgui --parallel
+
+      - name: Upload Windows converter artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wotlk-converter-windows
+          path: |
+            converter/build/Release/w3dconv.exe
+            converter/build/Release/w3dgui.exe
+            converter/win/*.bat
+          if-no-files-found: error
