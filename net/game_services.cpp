@@ -143,8 +143,16 @@ bool GameSession::flyTo(uint32_t node, uint32_t nowMs) {
 
 // ------------------------------------------------------------------ talents
 uint32_t GameSession::talentPoints() const {
+    if (talentInfoSeen_) return talentPointsFromInfo_;
     const WorldObject* me = selfObject();
     return me ? me->field(kCharacterPoints1) : 0;
+}
+
+uint32_t GameSession::glyphId(uint8_t slot) const {
+    if (slot >= glyphs_.size()) return 0;
+    if (glyphInfoSeen_) return glyphs_[slot];
+    const WorldObject* me = selfObject();
+    return me ? me->field((uint16_t)(UF::PLAYER_FIELD_GLYPHS + slot)) : 0;
 }
 
 uint32_t GameSession::classId() const {
@@ -183,6 +191,10 @@ void GameSession::unlearnSkill(uint32_t skill, uint32_t nowMs) {
 }
 
 int GameSession::talentRank(const Talent& t) const {
+    if (talentInfoSeen_) {
+        const auto it = talentRanks_.find(t.id);
+        return it == talentRanks_.end() ? 0 : it->second;
+    }
     return talents.rankOf(t, [&](uint32_t s) { return knowsSpell(s); });
 }
 

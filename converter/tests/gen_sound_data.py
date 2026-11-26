@@ -60,10 +60,10 @@ def dbc(name, fields, rows, strings):
 def strtab():
     return b"".join(S)
 
-# SoundEntries: ID, type, Name, File[10], Freq[10], DirectoryBase, Volume, Flags, MinDist, Cutoff, EAX = 29 fields
+# WotLK SoundEntries: ID, Name, File[10], Freq[10], DirectoryBase, Volume, Flags, MinDist, Cutoff, EAX = 28 fields
 def se(id_, name, files, base, vol=1.0):
     f = [s(x) for x in files] + [0] * (10 - len(files))
-    return [id_, 1, s(name)] + f + [1] * 10 + [s(base), vol, 0, 0, 0, 0]
+    return [id_, s(name)] + f + [1] * 10 + [s(base), vol, 0, 0, 0, 0]
 rows = [
     se(1, "igMainMenuOptionCheckBoxOn", ["click.wav"], "Sound\\Interface"),
     se(2, "igCharacterInfoOpen", ["open8.wav"], "Sound\\Interface", 0.5),
@@ -105,7 +105,7 @@ for k, (i, n, d, files) in enumerate(VOICE):
 for f in ("OrcFemale_err_nomana01.wav", "OrcFemale_err_nomana03.wav"):
     tone_wav(path("Sound\\Character\\Orc\\OrcFemaleErrorMessages\\" + f), 900, 0.5, rate=22050)
 tone_wav(path("Sound\\Creature\\DwarfMaleStandardNPC\\DwarfMaleStandardNPCGreeting01.wav"), 950, 0.5, rate=22050)
-dbc("SoundEntries.dbc", 29, rows, strtab())
+dbc("SoundEntries.dbc", 28, rows, strtab())
 
 def zrow(n, vals):
     r = [0] * n
@@ -125,18 +125,19 @@ dbc("CreatureModelData.dbc", 14, [zrow(14, {0: 1, 13: 1}), zrow(14, {0: 3, 13: 2
 dbc("NPCSounds.dbc", 5, [[7, 500, 501, 502, 0], [8, 503, 0, 0, 0], [9, 504, 0, 0, 0]], b"\0")
 dbc("CreatureDisplayInfoExtra.dbc", 20, [zrow(20, {0: 50, 1: 1, 2: 1}), zrow(20, {0: 51, 1: 3, 2: 0})], b"\0")
 dbc("EmotesTextSound.dbc", 5, [[1, 21, 1, 0, 800], [2, 21, 1, 1, 9999]], b"\0")   # (9999: no such sound - skipped)
+dbc("VocalUISounds.dbc", 7, [[1, 15, 1, 601, 0, 0, 0]], b"\0")  # VUI_NOMANA -> Human male sound 601
 dbc("FootstepTerrainLookup.dbc", 5, [[1, 7, 3, 331, 0], [2, 7, 1, 330, 0]], b"\0")
 S[:] = [b"\0"]
 dbc("TerrainType.dbc", 6, [[1, s("Dirt"), 0, 0, 0, 0], [3, s("Grass"), 0, 0, 0, 0]], strtab())
 dbc("WeaponImpactSounds.dbc", 23, [zrow(23, {0: 1, 1: 7, 2: 0, 3: 312}), zrow(23, {0: 2, 1: 7, 2: 1, 3: 310, 13: 311})], b"\0")
-# SpellVisualKit: ID, StartAnim 1, Anim 2 (small ids that are also SoundEntries ids: 1..5), ..., Sound 15 (20 fields)
+# WotLK SpellVisualKit: ID, StartAnim 1, Anim 2, ..., Sound 15 (20 fields)
 dbc("SpellVisualKit.dbc", 20, [zrow(20, {0: 10, 1: 1, 2: 2, 15: 320}), zrow(20, {0: 11, 1: 3, 2: 4, 15: 321}),
                                zrow(20, {0: 12, 1: 5, 2: 1, 15: 322})], b"\0")
 # SpellVisual: ID, precast 1, cast 2, impact 3, state 4, stateDone 5, channel 6, ..., missile sound 11 (16 fields)
 dbc("SpellVisual.dbc", 16, [zrow(16, {0: 5, 1: 10, 2: 11, 3: 12})], b"\0")
 S[:] = [b"\0"]
-spells = [zrow(173, {0: 133, 115: 5, 120: s("Fireball")}), zrow(173, {0: 78, 115: 0, 120: s("Heroic Strike")})]
-dbc("Spell.dbc", 173, spells, strtab())
+spells = [zrow(234, {0: 133, 131: 5, 136: s("Fireball")}), zrow(234, {0: 78, 131: 0, 136: s("Heroic Strike")})]
+dbc("Spell.dbc", 234, spells, strtab())
 
 S[:] = [b"\0"]
 # AreaTable (1.12): ID, map, parent, bit, flags, prov, provUW, ambience, zoneMusic, intro, explore, name[9], ... = 25

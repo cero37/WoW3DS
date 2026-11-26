@@ -851,7 +851,7 @@ void OfflineSession::loginPackets(uint32_t nowMs) {
         Writer w;
         w.u8(0);
         w.u16(pr.spellCount);
-        for (uint8_t i = 0; i < pr.spellCount; ++i) { w.u16((uint16_t)pr.spells[i]); w.u16(i); }
+        for (uint8_t i = 0; i < pr.spellCount; ++i) { w.u32(pr.spells[i]); w.u16(i); }
         w.u16(0);   // no cooldowns
         send(SMSG_INITIAL_SPELLS, w.b);
     }

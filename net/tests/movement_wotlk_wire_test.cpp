@@ -9,7 +9,7 @@ int main() {
     static_assert(MoveFlag::CanFly == 0x01000000);
     static_assert(MoveFlag::Flying == 0x02000000);
     static_assert(MoveExtraFlag::AlwaysAllowPitching == 0x0020);
-    static_assert(MoveExtraFlag::InterpolatedMovement == 0x0400);
+    static_assert(MoveExtraFlag::InterpolatedMovement == 0x0200);
     static_assert(MoveOp::StartForward == 0x0B5);
     static_assert(ObjOp::SMSG_MONSTER_MOVE == 0x0DD);
 

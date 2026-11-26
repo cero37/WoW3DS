@@ -45,7 +45,7 @@ struct Reader {
     Reader(const Bytes& b, size_t start = 0) : p(b.data()), n(b.size()), pos(start) {}
     Reader(const uint8_t* data, size_t len) : p(data), n(len) {}
     size_t left() const { return pos < n ? n - pos : 0; }
-    bool need(size_t k) { if (pos + k > n) { bad = true; pos = n; return false; } return true; }
+    bool need(size_t k) { if (pos > n || k > n - pos) { bad = true; pos = n; return false; } return true; }
     uint8_t u8() { return need(1) ? p[pos++] : 0; }
     uint16_t u16() { uint16_t v = u8(); return (uint16_t)(v | (u8() << 8)); }
     uint32_t u32() { uint32_t v = u16(); return v | ((uint32_t)u16() << 16); }

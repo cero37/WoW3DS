@@ -1,5 +1,5 @@
 """Stage-5 part of the fake server: an independent (Python) implementation of
-the vanilla 1.12.1 server side of SMSG_UPDATE_OBJECT, the compressed variants,
+the WotLK 3.3.5a server side of SMSG_UPDATE_OBJECT, the compressed variants,
 SMSG_MONSTER_MOVE, relayed player movement and forced-movement ACKs, plus a
 strict checker for the client's own movement packets.
 
@@ -22,10 +22,10 @@ RESULTS5 = {"errors": [], "move_packets": 0, "heartbeats": 0, "facings": 0, "sta
             "casts": [], "cancels": 0,
             "active_mover": 0, "moves_before_mover": 0}
 
-# movement flags (vMaNGOS MovementFlags)
+# WotLK 3.3.5a movement flags and update flags.
 F_FORWARD, F_BACKWARD, F_SL, F_SR = 0x1, 0x2, 0x4, 0x8
-F_ROOT, F_JUMPING, F_SWIMMING, F_SPLINE = 0x1000, 0x2000, 0x200000, 0x400000
-F_TRANSPORT, F_SPLINE_ELEV = 0x2000000, 0x4000000
+F_ROOT, F_JUMPING, F_FALLING_FAR, F_SWIMMING, F_FLYING = 0x800, 0x1000, 0x2000, 0x200000, 0x2000000
+F_TRANSPORT, F_SPLINE, F_SPLINE_ELEV = 0x200, 0x8000000, 0x4000000
 UF_SELF, UF_TRANSPORT, UF_MELEE, UF_HIGHGUID, UF_ALL, UF_LIVING, UF_POS = 1, 2, 4, 8, 0x10, 0x20, 0x40
 
 def packguid(g):
@@ -34,6 +34,16 @@ def packguid(g):
         b = (g >> (8 * i)) & 0xFF
         if b: mask |= 1 << i; out += bytes([b])
     return bytes([mask]) + out
+
+def unpackguid(data, offset=0):
+    mask = data[offset]
+    offset += 1
+    guid = 0
+    for i in range(8):
+        if mask & (1 << i):
+            guid |= data[offset] << (8 * i)
+            offset += 1
+    return guid, offset
 
 def fields_blob(fields):                       # {index: u32 or float}
     if not fields: return b"\0"
@@ -46,28 +56,31 @@ def fields_blob(fields):                       # {index: u32 or float}
         out += struct.pack("<f", v) if isinstance(v, float) else struct.pack("<I", v & 0xFFFFFFFF)
     return out
 
-def movement_info(flags, t, x, y, z, o, pitch=0.0, fall=0, jump=None, transport=None, elev=None):
-    out = struct.pack("<IIffff", flags, t, x, y, z, o)
+def movement_info(flags, t, x, y, z, o, pitch=0.0, fall=0, jump=None, transport=None, elev=None,
+                  extra=0):
+    out = struct.pack("<IHIffff", flags, extra, t, x, y, z, o)
     if flags & F_TRANSPORT:
         g, tx, ty, tz, to = transport
-        out += struct.pack("<Qffff", g, tx, ty, tz, to)
-    if flags & F_SWIMMING: out += struct.pack("<f", pitch)
+        out += packguid(g) + struct.pack("<ffffIB", tx, ty, tz, to, t, 0xFF)
+        if extra & 0x0200: out += struct.pack("<I", t)
+    if flags & (F_SWIMMING | F_FLYING) or extra & 0x0020: out += struct.pack("<f", pitch)
     out += struct.pack("<I", fall)
     if flags & F_JUMPING: out += struct.pack("<ffff", *jump)
     if flags & F_SPLINE_ELEV: out += struct.pack("<f", elev)
     return out
 
 def living_block(uflags, mflags, pos, o, spline=None, **kw):
-    out = bytes([uflags | UF_LIVING]) + movement_info(mflags, 1000, *pos, o, **kw)
-    out += struct.pack("<ffffff", 2.5, 7.0, 4.5, 4.722222, 2.5, 3.141594)
+    out = struct.pack("<H", uflags | UF_LIVING) + movement_info(mflags, 1000, *pos, o, **kw)
+    out += struct.pack("<fffffffff", 2.5, 7.0, 4.5, 4.722222, 2.5, 7.0, 4.5, 3.141594, 3.141594)
     if mflags & F_SPLINE:
         sflags, final, passed, dur, pts, end = spline
         out += struct.pack("<I", sflags)
-        if sflags & 0x10000: out += struct.pack("<fff", *final)
-        elif sflags & 0x20000: out += struct.pack("<Q", final)
-        elif sflags & 0x40000: out += struct.pack("<f", final)
-        out += struct.pack("<IIII", passed, dur, 77, len(pts)) + b"".join(struct.pack("<fff", *p) for p in pts)
-        out += struct.pack("<fff", *end)
+        if sflags & 0x8000: out += struct.pack("<fff", *final)
+        elif sflags & 0x10000: out += struct.pack("<Q", final)
+        elif sflags & 0x20000: out += struct.pack("<f", final)
+        out += struct.pack("<IIIfffII", passed, dur, 77, 1.0, 1.0, 0.0, 0, len(pts))
+        out += b"".join(struct.pack("<fff", *p) for p in pts)
+        out += b"\0" + struct.pack("<fff", *end)
     if uflags & UF_HIGHGUID: out += struct.pack("<I", 0)
     if uflags & UF_ALL: out += struct.pack("<I", 1)
     if uflags & UF_MELEE: out += packguid(1)
@@ -75,7 +88,7 @@ def living_block(uflags, mflags, pos, o, spline=None, **kw):
     return out
 
 def position_block(uflags, pos, o):
-    out = bytes([uflags | UF_POS]) + struct.pack("<ffff", *pos, o)
+    out = struct.pack("<H", uflags | UF_POS) + struct.pack("<ffff", *pos, o)
     if uflags & UF_HIGHGUID: out += struct.pack("<I", 0)
     if uflags & UF_ALL: out += struct.pack("<I", 1)
     return out
@@ -87,7 +100,7 @@ def values(guid, fields):
     return b"\x00" + packguid(guid) + fields_blob(fields)
 
 def movement_upd(guid, movement):
-    return b"\x01" + struct.pack("<Q", guid) + movement
+    return b"\x01" + packguid(guid) + movement
 
 def out_of_range(guids):
     return b"\x04" + struct.pack("<I", len(guids)) + b"".join(packguid(g) for g in guids)
@@ -96,15 +109,15 @@ def update_packet(blocks):
     return struct.pack("<IB", len(blocks), 0) + b"".join(blocks)
 
 def unit_fields(guid, entry, level, hp, display):
-    return {0: guid & 0xFFFFFFFF, 1: guid >> 32, 2: 0x9, 3: entry, 4: 1.0, 22: hp, 28: hp + 10, 34: level,
-            35: 7, 131: display, 132: display, 129: 0.5, 130: 1.5}
+    return {0: guid & 0xFFFFFFFF, 1: guid >> 32, 2: 0x9, 3: entry, 4: 1.0, 23: 0x01010000,
+            24: hp, 32: hp + 10, 54: level, 55: 7, 67: display, 68: display, 65: 0.5, 66: 1.5}
 
 def pack_xyz(dx, dy, dz):                      # mangos appendPackXYZ
     x = int(dx / 0.25) & 0x7FF; y = int(dy / 0.25) & 0x7FF; z = int(dz / 0.25) & 0x3FF
     return x | (y << 11) | (z << 22)
 
 def monster_move(guid, start, dest, mids, dur, flags=0x100, uncompressed_pts=None, kind=0, facing=None):
-    out = packguid(guid) + struct.pack("<fffI", *start, 1234) + bytes([kind])
+    out = packguid(guid) + b"\0" + struct.pack("<fffI", *start, 1234) + bytes([kind])
     if kind == 1: return out
     if kind == 4: out += struct.pack("<f", facing)
     out += struct.pack("<II", flags, dur)
@@ -146,7 +159,7 @@ class World5:
         blocks.append(create(me, 4, living_block(UF_SELF | UF_ALL, 0, SPAWN, 3.07), f, two=True))
         # items in the bags (type 1) - must be stored but not drawn
         for i in range(6):
-            blocks.append(create(0x4000000000000000 | (100 + i), 1, b"\x10" + struct.pack("<I", 1),
+            blocks.append(create(0x4000000000000000 | (100 + i), 1, struct.pack("<HI", 0x10, 1),
                                  {0: 100 + i, 1: 0x40000000, 2: 0x3, 3: 25 + i, 4: 1.0}))
         # a few units near the abbey: idle, one with a spline running, one swimming, one jumping,
         # one attacking (MELEE flag) and one on a transport
@@ -243,10 +256,10 @@ class World5:
     def system_msg(self): self.chat(0x0A, 0, 0, "Welcome to the fake realm.")
     def channel_joined(self): self.send(0x099, b"\x02" + b"General\0" + struct.pack("<II", 0, 0))
 
-    # ---- spells (mangos-zero Player::SendInitialSpells / SendInitialActionButtons, Spell::SendSpellStart/Go)
+    # ---- spells (WotLK SMSG_INITIAL_SPELLS / SMSG_ACTION_BUTTONS, SMSG_SPELL_START/GO)
     SPELLS = (78, 6603, 2457, 668, 9998, 9999)
     def send_spells(self):
-        b = struct.pack("<BH", 0, len(self.SPELLS)) + b"".join(struct.pack("<HH", s, i) for i, s in enumerate(self.SPELLS))
+        b = struct.pack("<BH", 0, len(self.SPELLS)) + b"".join(struct.pack("<IH", s, i) for i, s in enumerate(self.SPELLS))
         b += struct.pack("<H", 1) + struct.pack("<HHHII", 2457, 0, 0, 0, 3000)      # Battle Stance not ready for 3 s
         self.send(0x12A, b)
         bar = [0] * 120
@@ -323,8 +336,8 @@ class World5:
             self.wolf_pos = dest[:2]
             self.next_swing = t + 0.9
         self.state_update(self.me, self.wolf, dmg, hit_info=0x10 if miss else 2)
-        fields = {22: self.wolf_hp}
-        if self.wolf_hp == 0: fields[143] = 1          # UNIT_DYNAMIC_FLAGS: lootable
+        fields = {24: self.wolf_hp}
+        if self.wolf_hp == 0: fields[79] = 1           # UNIT_DYNAMIC_FLAGS: lootable
         self.send(0x0A9, update_packet([values(self.wolf, fields)]))
         if self.wolf_hp == 0:
             RESULTS5["wolf_dead"] = True
@@ -335,7 +348,7 @@ class World5:
             self.next_bite = t + 1.1
             self.my_hp -= 3
             self.state_update(self.wolf, self.me, 3)
-            self.send(0x0A9, update_packet([values(self.me, {22: self.my_hp})]))
+            self.send(0x0A9, update_packet([values(self.me, {24: self.my_hp})]))
 
     # ---- other player (relayed movement)
     def other_move(self, op, flags):
@@ -385,9 +398,9 @@ class World5:
         print("[stage5] ERROR", msg)
 
     def parse_mi(self, body, off=0):
-        flags, t, x, y, z, o = struct.unpack_from("<IIffff", body, off); off += 24
+        flags, extra, t, x, y, z, o = struct.unpack_from("<IHIffff", body, off); off += 26
         if flags & F_TRANSPORT: raise ValueError("client sent transport data")
-        if flags & F_SWIMMING: off += 4
+        if flags & (F_SWIMMING | F_FLYING) or extra & 0x0020: off += 4
         fall, = struct.unpack_from("<I", body, off); off += 4
         if flags & F_JUMPING: off += 16
         if flags & F_SPLINE_ELEV: off += 4
@@ -410,7 +423,9 @@ class World5:
             return True
         if op in self.MOVE_OPS:
             try:
-                (flags, t, x, y, z, o, fall), end = self.parse_mi(body)
+                guid, start = unpackguid(body)
+                if guid != self.me: raise ValueError(f"unexpected mover {guid:x}")
+                (flags, t, x, y, z, o, fall), end = self.parse_mi(body, start)
             except Exception as e:
                 self.err(f"{self.MOVE_OPS[op]}: unparsable ({e})"); return True
             if end != len(body): self.err(f"{self.MOVE_OPS[op]}: {len(body) - end} trailing bytes")
@@ -457,15 +472,16 @@ class World5:
             return True
         if op in (0xE3, 0xE9, 0xEB, 0xC7):
             if op not in self.expect_ack: self.err(f"unexpected ACK 0x{op:X}"); return True
-            g, cnt = struct.unpack_from("<QI", body, 0)
+            g, off = unpackguid(body)
+            cnt, = struct.unpack_from("<I", body, off); off += 4
             if g != self.me: self.err(f"ACK 0x{op:X} with guid {g:x}")
             if cnt != self.expect_ack.pop(op): self.err(f"ACK 0x{op:X} counter {cnt}")
             if op == 0xC7:
-                if len(body) != 16: self.err(f"TELEPORT_ACK size {len(body)} != 16")
+                if len(body) != off + 4: self.err(f"TELEPORT_ACK size {len(body)} != {off + 4}")
                 RESULTS5["teleport_ack"] = True
-                self.last = (struct.unpack_from("<I", body, 12)[0], *self.tele_pos[:2])
+                self.last = (struct.unpack_from("<I", body, off)[0], *self.tele_pos[:2])
                 return True
-            (flags, t, x, y, z, o, fall), end = self.parse_mi(body, 12)
+            (flags, t, x, y, z, o, fall), end = self.parse_mi(body, off)
             if op == 0xE3:
                 if len(body) != end + 4: self.err(f"speed ACK size {len(body)} != {end + 4}")
                 sp, = struct.unpack_from("<f", body, end)

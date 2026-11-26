@@ -49,6 +49,7 @@
 #include "hlod.hpp"
 
 #include <math.h>
+#include <dirent.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -81,7 +82,7 @@ static inline u32 topClearColor(u32 rgba) { return rgba >> 8; }
 // Memory split: source/heaps.cpp (6.32) - heap 24 MB under the Homebrew Launcher (124 MB region), 48 MB from the CIA (178 MB);
 // everything else is the linear heap, where terrain, models and texture staging live.
 
-static const char* kOutDir = "sdmc:/3ds/w3dproto";
+static char kOutDir[96] = "sdmc:/3ds/w3dproto";
 static const float kDrawDists[5] = {120, 250, 400, 533, 800};
 static const float kHorizons[3] = {0, 800, 1200};   // 6.34b: Settings -> Interface -> Horizon (off / 800 / 1200 yd)
 
@@ -562,14 +563,63 @@ static uint32_t zoneAtPoint(uint32_t mapId, float x, float y) {
     return a;
 }
 
+static bool hasFile(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+    fclose(f);
+    return true;
+}
+
+static bool isMapPackName(const char* name) {
+    if (strncmp(name, "map", 3) != 0) return false;
+    const char* p = name + 3;
+    if (*p < '0' || *p > '9') return false;
+    while (*p >= '0' && *p <= '9') ++p;
+    return strcmp(p, ".w3dp") == 0;
+}
+
+static bool hasAnyMapPack(const char* dir) {
+    DIR* d = opendir(dir);
+    if (!d) return false;
+    bool found = false;
+    char path[160];
+    while (dirent* e = readdir(d)) {
+        if (!isMapPackName(e->d_name)) continue;
+        snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
+        if (hasFile(path)) { found = true; break; }
+    }
+    closedir(d);
+    return found;
+}
+
+static void selectDataDir() {
+    const bool hasSdPack = hasAnyMapPack("sdmc:/3ds/w3dproto");
+    const bool hasLocalPack = hasAnyMapPack(".");
+    if (!hasSdPack && (hasLocalPack || hasFile("ui.w3dp") || hasFile("talents.txt") || hasFile("sound/sounds.txt")))
+        snprintf(kOutDir, sizeof kOutDir, ".");
+}
+
 static const char* findPack() {
     // map0.w3dp: the Eastern Kingdoms of 'w3dconv --all' (stage 5.27, with the shared pool common*.w3dp); test.w3dp: a region
-    static const char* candidates[] = {"sdmc:/3ds/w3dproto/map0.w3dp", "sdmc:/3ds/w3dproto/test.w3dp", "sdmc:/3ds/w3dproto/synth.w3dp",
-                                       "romfs:/synth.w3dp"};
-    for (const char* p : candidates) {
+    static const char* names[] = {"map0.w3dp", "test.w3dp", "synth.w3dp"};
+    static char path[128];
+    for (const char* name : names) {
+        snprintf(path, sizeof path, "%s/%s", kOutDir, name);
+        const char* p = path;
         FILE* f = fopen(p, "rb");
         if (f) { fclose(f); return p; }
     }
+    if (DIR* d = opendir(kOutDir)) {
+        while (dirent* e = readdir(d)) {
+            if (!isMapPackName(e->d_name)) continue;
+            snprintf(path, sizeof path, "%s/%s", kOutDir, e->d_name);
+            if (!hasFile(path)) continue;
+            closedir(d);
+            return path;
+        }
+        closedir(d);
+    }
+    if (FILE* f = fopen("romfs:/synth.w3dp", "rb")) { fclose(f); return "romfs:/synth.w3dp"; }
     return nullptr;
 }
 
@@ -879,6 +929,7 @@ int main() {
     osSetSpeedupEnable(true);  // 804 MHz + L2 on New 3DS
     gfxInitDefault();
     romfsInit();
+    selectDataDir();
     PrintConsole bottom;
     consoleInit(GFX_BOTTOM, &bottom);
     {   // 6.32b: the memory the system gave (a CIA in the 178 MB mode: region 182272 KB, heap 49152 KB) - on the touch screen
@@ -901,7 +952,10 @@ int main() {
     {
         char uiPath[96];
         snprintf(uiPath, sizeof uiPath, "%s/ui.w3dp", kOutDir);
-        ui::assets().open(uiPath);
+        if (!ui::assets().open(uiPath)) {
+            if (strcmp(kOutDir, ".") != 0) ui::assets().open("ui.w3dp");
+            else ui::assets().open("sdmc:/3ds/w3dproto/ui.w3dp");
+        }
     }
     bool bottomGpu = false;   // the GPU drew the touch screen last (the console must clear it before printing)
 
@@ -1166,7 +1220,13 @@ int main() {
     applyTopMode(padCfg.topMode);
     fsrUpdate();
     // Sound: sdmc:/3ds/w3dproto/sound/ from w3dconv --sound (else built-in blips); the DSP firmware is OpenDSP, linked in
-    audio::init((std::string(kOutDir) + "/sound").c_str());
+    std::string soundDir = std::string(kOutDir) + "/sound";
+    if (!hasFile((soundDir + "/sounds.txt").c_str())) {
+        const char* sdSound = "sdmc:/3ds/w3dproto/sound/sounds.txt";
+        if (hasFile(sdSound)) soundDir = "sdmc:/3ds/w3dproto/sound";
+        else if (hasFile("sound/sounds.txt")) soundDir = "sound";
+    }
+    audio::init(soundDir.c_str());
     audio::setVolumes(padCfg.musicVol, padCfg.sfxVol, padCfg.ambVol);
     soundWorld.load(audio::soundsTxt());
     Pad pad;
@@ -1178,7 +1238,7 @@ int main() {
     // 7.04: intro cinematics (sound/cinematics.txt of w3dconv --sound): the camera flies the intro's path, the narration plays,
     // A or B skips; the server hears CMSG_COMPLETE_CINEMATIC when it ends. Without the file the intro is answered at once.
     cine::Table cineTable;
-    const bool haveCine = cineTable.load(std::string(kOutDir) + "/sound/cinematics.txt");
+    const bool haveCine = cineTable.load(soundDir + "/cinematics.txt");
     perf::event("cinematics: %s", haveCine ? "sound/cinematics.txt read" : "no sound/cinematics.txt - intros are skipped");
     struct CinePlay { const cine::Sequence* s = nullptr; uint32_t id = 0, startMs = 0; size_t nextSound = 0; float yaw = 0, pitch = 0; };
     CinePlay cinPlay;

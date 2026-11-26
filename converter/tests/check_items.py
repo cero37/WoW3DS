@@ -11,13 +11,13 @@ bad = 0
 def check(cond, what):
     global bad
     print("ok  " if cond else "FAIL", what); bad += not cond
-check(ver == 5, f"pack version {ver}")
+check(ver == 6, f"pack version {ver}")
 def item(did):
     k = (F("ITEM"), did)
     if k not in E: return None
     off, size = E[k]
-    assert size == 148, size
-    v = struct.unpack_from("<4B16I2I2I16I", b, off)
+    assert size == 172, size
+    v = struct.unpack_from("<4B16I2I2I22I", b, off)
     return dict(gg=v[0:3], hide=v[3], img=[v[4:12], v[12:20]], cape=v[20:22], model=v[22:24], helm=v[24:40])
 def cimg(i):
     off, size = E[(F("CIMG"), i)]

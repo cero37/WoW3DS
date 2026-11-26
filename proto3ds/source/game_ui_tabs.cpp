@@ -884,10 +884,11 @@ void GameUi::drawPaperDoll(w3n::GameSession& g, const Input& in) {
 
 // ------------------------------------------------------------------ Spells: the book (tap = bind, drag = bind, hold = info)
 void GameUi::spellTabs(int active) {
-    btn(2, kTop + 2, 72, 18, tr("Book", "Книга"), Act::SubView, 0, active == 0 ? Style::ToggleOn : Style::Toggle, Font::Small);
-    btn(76, kTop + 2, 72, 18, tr("Talents", "Таланты"), Act::SubView, 1, active == 1 ? Style::ToggleOn : Style::Toggle, Font::Small);
-    btn(150, kTop + 2, 72, 18, tr("Skills", "Навыки"), Act::SubView, 2, active == 2 ? Style::ToggleOn : Style::Toggle, Font::Small);
-    btn(224, kTop + 2, 78, 18, tr("Crafting", "Ремёсла"), Act::SubView, 3, active == 3 ? Style::ToggleOn : Style::Toggle, Font::Small);
+    const char* labels[5] = {tr("Book", "Книга"), tr("Talents", "Таланты"), tr("Glyphs", "Символы"),
+                             tr("Skills", "Навыки"), tr("Crafting", "Ремёсла")};
+    for (int i = 0; i < 5; ++i)
+        btn(2 + i * 60, kTop + 2, 58, 18, labels[i], Act::SubView, i == 2 ? 4 : i < 2 ? i : i - 1,
+            active == i ? Style::ToggleOn : Style::Toggle, Font::Small);
 }
 
 void GameUi::drawSpells(w3n::GameSession& g, const Input& in) {
@@ -928,6 +929,29 @@ void GameUi::drawSpells(w3n::GameSession& g, const Input& in) {
 }
 
 // ------------------------------------------------------------------ Talents: the class's trees (talents.txt)
+void GameUi::drawGlyphs(w3n::GameSession& g) {
+    spellTabs(2);
+    list_.textCentered(kTouchW / 2, kTop + 25, tr("Six glyph slots", "Seis ranuras de glifos"), kGrey, false, Font::Small);
+    const int top = kTop + 34;
+    for (int i = 0; i < 6; ++i) {
+        const int x = 7 + (i % 3) * 102, y = top + (i / 3) * 67;
+        const uint32_t id = g.glyphId((uint8_t)i);
+        const uint32_t spell = g.talents.glyphSpell(id);
+        const char* tier = i < 3 ? tr("Major", "Sublime") : tr("Minor", "Menor");
+        list_.rect(x, y, 98, 61, (i / 3) ? kRowAlt : kRow);
+        list_.outline(x, y, 98, 61, id ? kGold : kGrey);
+        char label[32];
+        snprintf(label, sizeof label, "%s %d", tier, i % 3 + 1);
+        list_.textFit(x + 4, y + 4, label, 90, kGold, true, Font::Small);
+        ui::Image icon = spell ? ui::assets().spellIcon(spell) : ui::Image();
+        if (icon.ok()) list_.image(x + 5, y + 23, 30, 30, icon);
+        else list_.rect(x + 5, y + 23, 30, 30, kRow);
+        if (spell) list_.textFit(x + 40, y + 25, g.spellNames.name(spell), 54, kText, false, Font::Small);
+        else if (id) list_.textFit(x + 40, y + 25, std::to_string(id), 54, kText, false, Font::Small);
+        else list_.textFit(x + 40, y + 25, tr("Empty", "Vacío"), 54, kGrey, false, Font::Small);
+    }
+}
+
 void GameUi::drawTalents(w3n::GameSession& g, const Input& in) {
     (void)in;
     spellTabs(1);
@@ -984,9 +1008,8 @@ void GameUi::drawTalents(w3n::GameSession& g, const Input& in) {
     const int ix = 136, iw = kTouchW - ix - 4;
     window(ix, gy - 2, iw, kTabY - gy - 2);
     list_.text(ix + 6, kTabY - 65, tr("Glyphs", "Символы"), kGold, true, Font::Small);
-    const w3n::WorldObject* me = g.selfObject();
     for (int i = 0; i < 6; ++i) {
-        const uint32_t id = me ? me->field((uint16_t)(w3n::UF::PLAYER_FIELD_GLYPHS + i)) : 0;
+        const uint32_t id = g.glyphId((uint8_t)i);
         const int x = ix + 6 + i * 22, y = kTabY - 49;
         list_.rect(x, y, 18, 18, id ? kRowAlt : kRow);
         const uint32_t spell = g.talents.glyphSpell(id);
@@ -1043,7 +1066,7 @@ void GameUi::drawTalents(w3n::GameSession& g, const Input& in) {
 // profession ("Journeyman"); a tap selects a skill and shows its description; a primary profession can be unlearned.
 void GameUi::drawSkills(w3n::GameSession& g, const Input& in) {
     (void)in;
-    spellTabs(2);
+    spellTabs(3);
     struct Group { int cat; const char* en; const char* ru; };
     static const Group kGroups[] = {
         {7, "Class Skills", "Классовые навыки"}, {11, "Professions", "Профессии"}, {9, "Secondary Skills", "Вторичные навыки"},
@@ -1208,7 +1231,7 @@ void GameUi::craftTick(w3n::GameSession& g, const Input& in) {
 }
 
 void GameUi::drawCraft(w3n::GameSession& g, const Input& in) {
-    spellTabs(3);
+    spellTabs(4);
     if (!g.recipes.loaded()) {
         window(10, kTop + 30, kTouchW - 20, 70);
         list_.textCentered(kTouchW / 2, kTop + 44, tr("No recipes.txt on the SD card", "Нет recipes.txt на SD-карте"), kText, true, Font::Normal);

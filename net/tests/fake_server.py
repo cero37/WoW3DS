@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal vanilla 1.12.1 realmd + world server for testing the client.
+"""Minimal WotLK 3.3.5a realmd + world server for testing the client.
 
 Written independently from the client: the server side of SRP6 (verifier,
 B, S = (A * v^u)^b) follows the MaNGOS realmd algorithm using Python's own
@@ -16,7 +16,7 @@ header cipher against a second implementation.
 another player (stage5.py) and validate the client's movement packets.
 Account: TEST / PASSWORD. World server listens on port+1.
 """
-import hashlib, json, math, os, socket, struct, sys, threading, time, zlib
+import hashlib, hmac, json, math, os, socket, struct, sys, threading, time, zlib
 from stage5 import World5, SPAWN, RESULTS5
 
 N = int("894B645E89E1535BBDAD5B8B290650530801B18EBFBF5E8FAB3C82872A3E9BB7", 16)
@@ -56,7 +56,7 @@ def realmd(conn, world_port, salt_zero_top):
     if TURTLE:   # 6.58: Turtle-type realmd (tortoise-wow): realms only for 1.18.1 build 7272
         assert tuple(ver) == (1, 18, 1) and build == 7272, (tuple(ver), build)
     else:
-        assert build == 5875
+        assert tuple(ver) == (3, 3, 5) and build == 12340, (tuple(ver), build)
     assert gamename == b"WoW\x00" and account == ACCOUNT
 
     salt = bytearray(os.urandom(32))
@@ -85,33 +85,50 @@ def realmd(conn, world_port, salt_zero_top):
     RESULTS["auth_ok"] = True
     SESSION[ACCOUNT] = K
     M2 = H(le(A), M1, K)
-    conn.sendall(bytes([1, 0]) + M2 + struct.pack("<I", 0))
+    conn.sendall(bytes([1, 0]) + M2 + struct.pack("<IIH", 0, 0, 0))
 
     req = recv_exact(conn, 5)
     assert req[0] == 0x10
     realms = b""
     for name, port, flags in (("Fake Realm", world_port, 0), ("Offline Realm", world_port, 2)):
-        realms += struct.pack("<IB", 1, flags) + name.encode() + b"\0" + f"127.0.0.1:{port}".encode() + b"\0"
+        realms += struct.pack("<BBB", 1, 0, flags) + name.encode() + b"\0" + f"127.0.0.1:{port}".encode() + b"\0"
         realms += struct.pack("<fBBB", 1.5, 1, 1, 1)
-    body = struct.pack("<IB", 0, 2) + realms + struct.pack("<H", 2)   # vanilla footer
+    body = struct.pack("<IH", 0, 2) + realms + struct.pack("<H", 2)
     conn.sendall(bytes([0x10]) + struct.pack("<H", len(body)) + body)
     print("[realmd] realm list sent")
 
 # ------------------------------------------------------------------ world
 class Crypt:
-    def __init__(self, key): self.k = key; self.si = self.sp = self.ri = self.rp = 0
-    def enc(self, data):     # server -> client headers
-        out = bytearray()
-        for c in data:
-            x = ((c ^ self.k[self.si]) + self.sp) & 0xFF
-            self.si = (self.si + 1) % len(self.k); self.sp = x; out.append(x)
-        return bytes(out)
-    def dec(self, data):     # client -> server headers
-        out = bytearray()
-        for c in data:
-            x = ((c - self.rp) & 0xFF) ^ self.k[self.ri]
-            self.ri = (self.ri + 1) % len(self.k); self.rp = c; out.append(x)
-        return bytes(out)
+    CLIENT_TO_SERVER = bytes.fromhex("c2b3723cc6aed9b5343c53ee2f4367ce")
+    SERVER_TO_CLIENT = bytes.fromhex("cc98ae04e897eaca12ddc09342915357")
+
+    class RC4:
+        def __init__(self, key):
+            self.s = list(range(256))
+            j = 0
+            for i in range(256):
+                j = (j + self.s[i] + key[i % len(key)]) & 0xFF
+                self.s[i], self.s[j] = self.s[j], self.s[i]
+            self.i = self.j = 0
+            self.apply(bytes(1024))
+
+        def apply(self, data):
+            out = bytearray()
+            for value in data:
+                self.i = (self.i + 1) & 0xFF
+                self.j = (self.j + self.s[self.i]) & 0xFF
+                self.s[self.i], self.s[self.j] = self.s[self.j], self.s[self.i]
+                out.append(value ^ self.s[(self.s[self.i] + self.s[self.j]) & 0xFF])
+            return bytes(out)
+
+    def __init__(self, key):
+        send_key = hmac.new(self.SERVER_TO_CLIENT, key, hashlib.sha1).digest()
+        recv_key = hmac.new(self.CLIENT_TO_SERVER, key, hashlib.sha1).digest()
+        self.send = self.RC4(send_key)
+        self.recv = self.RC4(recv_key)
+
+    def enc(self, data): return self.send.apply(data)  # server -> client headers
+    def dec(self, data): return self.recv.apply(data)  # client -> server headers
 
 # guid, name, race, class, level, x, y, z, (gender, skin, face, hair style, hair colour, facial), {slot: (display, inv)}
 DEFAULT_CHARS = [(1, "Testone", 1, 1, 12, -8949.95, -132.49, 83.53, (0, 0, 0, 0, 0, 0), {4: (7101, 5), 7: (7002, 8)}),
@@ -122,10 +139,10 @@ def send_enum(state):
     out = b""
     for guid, name, race, cls, lvl, x, y, z, look, equip in chars:
         out += struct.pack("<Q", guid) + name.encode() + b"\0" + bytes([race, cls, look[0]]) + bytes(look[1:6])
-        out += bytes([lvl]) + struct.pack("<IIfffII", 12, 0, x, y, z, 0, 0) + b"\0" + b"\0" * 12
-        for slot in range(20):
+        out += bytes([lvl]) + struct.pack("<IIfffII", 12, 0, x, y, z, 0, 0) + b"\0" * 4 + b"\0" + b"\0" * 12
+        for slot in range(19):
             d, inv = equip.get(slot, (0, 0))
-            out += struct.pack("<IB", d, inv)
+            out += struct.pack("<IBI", d, inv, 0)
     state["send"](0x03B, bytes([len(chars)]) + out, split=True)
 
 def world(conn):
@@ -158,24 +175,26 @@ def world(conn):
             rx["buf"] += chunk
 
     seed = struct.unpack("<I", os.urandom(4))[0]
-    send(0x1EC, struct.pack("<I", seed))
+    send(0x1EC, struct.pack("<II", 0, seed) + bytes(32))
     op, body = recv()
     assert op == 0x1ED, hex(op)
     build, _srv = struct.unpack("<II", body[0:8])
     end = body.index(b"\0", 8); account = body[8:end].decode()
-    client_seed = struct.unpack("<I", body[end + 1:end + 5])[0]
-    digest = body[end + 5:end + 25]
-    addon_size = struct.unpack("<I", body[end + 25:end + 29])[0]
-    addons = zlib.decompress(body[end + 29:])
+    fields = end + 1
+    _login_server_type, client_seed = struct.unpack_from("<II", body, fields)
+    digest_at = fields + 4 + 4 + 4 + 4 + 4 + 8
+    digest = body[digest_at:digest_at + 20]
+    addon_size = struct.unpack_from("<I", body, digest_at + 20)[0]
+    addons = zlib.decompress(body[digest_at + 24:])
     RESULTS["addons_ok"] = len(addons) == addon_size and b"Blizzard_AuctionUI" in addons
     K = SESSION.get(account)
     expect = H(account.encode(), b"\0\0\0\0", struct.pack("<I", client_seed), struct.pack("<I", seed), K)
     if digest != expect:
         print("[world] AUTH_SESSION digest MISMATCH"); send(0x1EE, bytes([0x0D])); return
-    assert build == 5875, f"world build {build}"   # (6.58: the Turtle world server too)
+    assert build == 12340, f"world build {build}"
     print(f"[world] AUTH_SESSION OK (build {build}, account {account}, addon block {addon_size} bytes inflated OK={RESULTS['addons_ok']})")
     crypt = Crypt(K)
-    send(0x1EE, bytes([0x0C]) + struct.pack("<IBI", 0, 0, 0))
+    send(0x1EE, bytes([0x0C]) + struct.pack("<IBIB", 0, 0, 0, 2))
 
     state = {"send": send}
     conn.settimeout(0.05)
@@ -215,7 +234,7 @@ def world(conn):
             guid = struct.unpack("<Q", body)[0]
             batching["on"] = True                  # like real servers: VERIFY_WORLD + first updates in one TCP write
             send(0x236, struct.pack("<Iffff", 0, *SPAWN, 3.07))   # SMSG_LOGIN_VERIFY_WORLD
-            send(0x209, b"\0" * 128)               # SMSG_ACCOUNT_DATA_TIMES
+            send(0x209, struct.pack("<IBI", 0, 0, 0))  # SMSG_ACCOUNT_DATA_TIMES: time, type, mask
             if "--cinematic" in sys.argv:          # 6.86: a new character's intro (vmangos: SendCinematicStart on the first login)
                 send(0x0FA, struct.pack("<I", 81))     # SMSG_TRIGGER_CINEMATIC, human intro
             RESULTS["world_ok"] = True
@@ -237,6 +256,8 @@ def world(conn):
                 send(0x0A9, os.urandom(3000))      # fake update object, bigger than one TCP read
             batching["on"] = False
             conn.sendall(b"".join(batch)); batch.clear()
+        elif op == 0x4FF:                          # CMSG_READY_FOR_ACCOUNT_DATA_TIMES
+            pass
         elif op == 0x0FC:                          # CMSG_COMPLETE_CINEMATIC (6.86)
             RESULTS["cinematic_done"] = True
             print("[world] intro cinematic completed by the client")

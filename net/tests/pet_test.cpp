@@ -219,7 +219,7 @@ int main() {
         CHECK(lastRed().find("run away") != std::string::npos, "SMSG_PET_BROKEN: a red line (%s)", lastRed().c_str());
         // Dismiss Pet: only when it is in the book; CMSG_CAST_SPELL 2641 with no target
         CHECK(!s.petCanDismissHunter(), "Dismiss Pet not known yet");
-        Writer sp; sp.u8(0); sp.u16(2); sp.u16(883); sp.u16(0); sp.u16(2641); sp.u16(0); sp.u16(0);
+        Writer sp; sp.u8(0); sp.u16(2); sp.u32(883); sp.u16(0); sp.u32(2641); sp.u16(0); sp.u16(0);
         s.handle(0x12A, sp.b, 10730);
         CHECK(s.knowsSpell(2641) && s.petCanDismissHunter(), "Dismiss Pet in the book");
         sent.clear();

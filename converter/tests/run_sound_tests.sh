@@ -14,8 +14,11 @@ grep -q "^L	fishbite	3355" "$OUT/sound/sounds.txt"
 V="$OUT/sound/sounds.txt"
 grep -q "^N	103	500	501	502$" "$V" && grep -q "^N	104	503	0	0$" "$V" && grep -q "^N	106	700	0	0$" "$V" && \
 grep -qP "^N\t107\t21[0-9]{8}\t0\t0$" "$V" && \
-grep -q "^V	1	0	norage	600$" "$V" && grep -q "^V	1	0	outofrange	601$" "$V" && grep -qP "^V\t2\t1\tnomana\t21[0-9]{8}$" "$V" && \
-grep -q "^T	21	1	0	800$" "$V" && ! grep -q "9999" "$V" && grep -q "voices: 3 error lines (2 listed, 1 by file name), 3 NPC sets, 5 displays with a voice (2 by race), 1 emote voices" "$OUT/conv.log" \
+grep -q "^V	1	0	norage	600$" "$V" && grep -q "^V	1	0	outofrange	601$" "$V" && grep -q "^V	1	0	nomana	601$" "$V" && \
+grep -qP "^V\t2\t1\tnomana\t21[0-9]{8}$" "$V" && \
+grep -q "^T	21	1	0	800$" "$V" && ! grep -q "9999" "$V" && \
+grep -q "VocalUISounds: 1 mapped race/gender/event sounds" "$OUT/conv.log" && \
+grep -q "voices: 4 error lines (2 listed, 1 by file name), 3 NPC sets, 5 displays with a voice (2 by race), 1 emote voices" "$OUT/conv.log" \
   && echo "VOICES (sounds.txt N / V / T): PASS" || { echo "VOICES: FAIL"; grep -E "^(N|V|T)	" "$V"; grep voices "$OUT/conv.log"; exit 1; }
 # 6.60: creature sound sets - the display's own (100, 101) and, for a display with none, its model's (102 through CreatureModelData col 13)
 grep -q "^D	100	1$" "$V" && grep -q "^D	101	2$" "$V" && grep -q "^D	102	2$" "$V" && ! grep -q "^D	103	" "$V" \

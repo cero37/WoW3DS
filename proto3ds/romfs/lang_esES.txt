@@ -123,6 +123,11 @@ Remove	Quitar
 Info	Información
 Book	Reservar
 Talents	Talentos
+Glyphs	Glifos
+Six glyph slots	Seis ranuras de glifos
+Major	Sublime
+Minor	Menor
+Empty	Vacío
 Skills	Habilidades
 Crafting	Elaboración
 Passive	Pasivo

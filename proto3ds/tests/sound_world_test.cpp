@@ -33,6 +33,7 @@ static Run replay(const std::vector<LoggedPacket>& pk, const std::string& tables
         if (p.dir == 1) {
             if (MoveOp::isRelayedMove(p.opcode) || p.opcode == MoveOp::Heartbeat) {
                 Reader r(p.data);
+                r.packedGuid();
                 MovementInfo m;
                 if (readMovementInfo(r, m)) {
                     if (getenv("SW_DEBUG")) std::printf("move %u op %x flags %x %.2f %.2f\n", p.ms, p.opcode, m.flags, m.x, m.y);

@@ -361,7 +361,7 @@ std::string GameUi::panelTitle(w3n::GameSession& g, Panel p) const {
         case Tab::Combat: return tr("Combat", "Бой");
         case Tab::Map: return tr("Map", "Карта");
         case Tab::Bags: case Tab::Gear: return subBags_ ? tr("Equipment", "Экипировка") : tr("Bags", "Сумки");
-        case Tab::Spells: return subSpells_ == 3 ? tr("Crafting", "Ремёсла") : subSpells_ == 2 ? tr("Skills", "Навыки") : subSpells_ ? tr("Talents", "Таланты") : tr("Spellbook", "Книга заклинаний");
+        case Tab::Spells: return subSpells_ == 4 ? tr("Glyphs", "Символы") : subSpells_ == 3 ? tr("Crafting", "Ремёсла") : subSpells_ == 2 ? tr("Skills", "Навыки") : subSpells_ ? tr("Talents", "Таланты") : tr("Spellbook", "Книга заклинаний");
         case Tab::Quests: return tr("Quest log", "Журнал заданий");
         case Tab::Chat: return tr("Chat", "Чат");
         case Tab::Social: return tr("Social", "Общение");
@@ -435,7 +435,7 @@ void GameUi::drawPanel(w3n::GameSession& g, const Input& in) {
                 case Tab::Map: drawMap(g, in); break;
                 case Tab::Chat: drawChat(g, in); break;
                 case Tab::Bags: case Tab::Gear: if (subBags_) drawPaperDoll(g, in); else drawItems(g, in); break;
-                case Tab::Spells: if (subSpells_ == 3) drawCraft(g, in); else if (subSpells_ == 2) drawSkills(g, in); else if (subSpells_) drawTalents(g, in); else drawSpells(g, in); break;
+                case Tab::Spells: if (subSpells_ == 4) drawGlyphs(g); else if (subSpells_ == 3) drawCraft(g, in); else if (subSpells_ == 2) drawSkills(g, in); else if (subSpells_) drawTalents(g, in); else drawSpells(g, in); break;
                 case Tab::Quests: drawQuestLog(g, in); break;
                 case Tab::Social: drawSocial(g, in); break;
                 case Tab::Settings: drawSettings(in); break;

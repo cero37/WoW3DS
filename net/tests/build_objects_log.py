@@ -100,7 +100,7 @@ go = 0xF110000000000000 | (55 << 24) | 1
 pk(3000, 0x0A9, update_packet([create(go, 5, position_block(UF_HIGHGUID, (S[0] + 1, S[1] + 2, S[2] + 3), 0.7),
                                       {0: 1, 2: 0x21, 3: 55, 8: 200})]))
 expect(3000, go, (S[0] + 1, S[1] + 2, S[2] + 3), 0.7)
-raw = update_packet([values(w4, {22: 7}), out_of_range([w3])])
+raw = update_packet([values(w4, {24: 7}), out_of_range([w3])])
 pk(3100, 0x1F6, struct.pack("<I", len(raw)) + zlib.compress(raw, 9))
 pk(3200, 0x0AA, struct.pack("<Q", go))
 expect(5000, w3, (0, 0, 0), None, 0)

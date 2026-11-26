@@ -13,6 +13,10 @@ g++ -std=c++20 $SAN -Wall -Wextra "$N/tools/w3dlogin.cpp" $SRC -o "$OUT/w3dlogin
 g++ -std=c++20 $SAN -Wall "$N/tests/objects_test.cpp" $SRC -o "$OUT/objects_test"
 g++ -std=c++20 $SAN -Wall -Wextra "$N/tests/runes_test.cpp" $SRC -o "$OUT/runes_test"
 "$OUT/runes_test"
+g++ -std=c++20 $SAN -Wall -Wextra "$N/tests/wotlk_bootstrap_test.cpp" $SRC -o "$OUT/wotlk_bootstrap_test"
+"$OUT/wotlk_bootstrap_test"
+g++ -std=c++20 $SAN -Wall -Wextra "$N/tests/movement_wotlk_wire_test.cpp" "$N/movement.cpp" -o "$OUT/movement_wotlk_wire_test"
+"$OUT/movement_wotlk_wire_test"
 g++ -std=c++20 $SAN -Wall -Wextra "$N/tests/glyph_table_test.cpp" "$N/tables.cpp" -o "$OUT/glyph_table_test"
 "$OUT/glyph_table_test"
 

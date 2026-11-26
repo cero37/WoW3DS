@@ -390,16 +390,21 @@ void LoginFlow::leaveOffline() {
 }
 
 void LoginFlow::loadDataTables() {
-    game_.spellNames.load("sdmc:/3ds/w3dproto/spells.txt");   // optional, from w3dconv
-    if (!game_.factions.loaded()) game_.factions.load("sdmc:/3ds/w3dproto/factions.txt");
-    if (!game_.talents.loaded()) game_.talents.load("sdmc:/3ds/w3dproto/talents.txt");
-    if (!game_.spellDesc.loaded()) game_.spellDesc.load("sdmc:/3ds/w3dproto/spelldesc.bin");
-    if (!game_.skills.loaded()) game_.skills.load("sdmc:/3ds/w3dproto/skills.txt");
-    if (!game_.recipes.loaded()) game_.recipes.load("sdmc:/3ds/w3dproto/recipes.txt");
-    if (!game_.taxiTable.loaded()) game_.taxiTable.load("sdmc:/3ds/w3dproto/taxi.txt");
-    if (!game_.locks.loaded()) game_.locks.load("sdmc:/3ds/w3dproto/locks.txt");
-    if (!game_.areaTriggers.loaded()) game_.areaTriggers.load("sdmc:/3ds/w3dproto/areatriggers.txt");
-    if (!game_.emotes.loaded()) game_.emotes.load("sdmc:/3ds/w3dproto/emotes.txt");
+    auto load = [](auto& table, const char* name) {
+        char path[128];
+        snprintf(path, sizeof path, "sdmc:/3ds/w3dproto/%s", name);
+        if (!table.load(path)) table.load(name);
+    };
+    load(game_.spellNames, "spells.txt");   // optional, from w3dconv
+    if (!game_.factions.loaded()) load(game_.factions, "factions.txt");
+    if (!game_.talents.loaded()) load(game_.talents, "talents.txt");
+    if (!game_.spellDesc.loaded()) load(game_.spellDesc, "spelldesc.bin");
+    if (!game_.skills.loaded()) load(game_.skills, "skills.txt");
+    if (!game_.recipes.loaded()) load(game_.recipes, "recipes.txt");
+    if (!game_.taxiTable.loaded()) load(game_.taxiTable, "taxi.txt");
+    if (!game_.locks.loaded()) load(game_.locks, "locks.txt");
+    if (!game_.areaTriggers.loaded()) load(game_.areaTriggers, "areatriggers.txt");
+    if (!game_.emotes.loaded()) load(game_.emotes, "emotes.txt");
     game_.objects.setTransportsFile("sdmc:/3ds/w3dproto/transports.txt");
 }
 

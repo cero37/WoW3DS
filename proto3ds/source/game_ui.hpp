@@ -276,6 +276,7 @@ private:
     void drawItems(w3n::GameSession& g, const Input& in);
     void drawPaperDoll(w3n::GameSession& g, const Input& in);
     void drawSpells(w3n::GameSession& g, const Input& in);
+    void drawGlyphs(w3n::GameSession& g);
     void drawTalents(w3n::GameSession& g, const Input& in);
     void drawSkills(w3n::GameSession& g, const Input& in);   // 6.19
     void drawCraft(w3n::GameSession& g, const Input& in);    // 6.38: professions - recipes, reagents, Create / Create All

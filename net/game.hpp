@@ -1034,6 +1034,7 @@ public:
     TalentTable talents;                                 // talents.txt
     uint32_t talentPoints() const;                       // PLAYER_CHARACTER_POINTS1
     int talentRank(const Talent& t) const;               // ranks learned (from the spell book)
+    uint32_t glyphId(uint8_t slot) const;                 // active spec's glyph property id, falling back to player update fields
     // CMSG_LEARN_TALENT for the next rank; false + a line when it cannot be learned (points, tier, prerequisite).
     bool learnTalent(uint32_t talentId, uint32_t nowMs);
     uint32_t classId() const;                            // UNIT_BYTES_0 byte 1
@@ -1127,6 +1128,11 @@ public:
 
 private:
     bool handlePet(uint16_t opcode, const Bytes& data, uint32_t nowMs);
+    bool talentInfoSeen_ = false;
+    uint32_t talentPointsFromInfo_ = 0;
+    std::unordered_map<uint32_t, uint8_t> talentRanks_;
+    std::array<uint16_t, 6> glyphs_{};
+    bool glyphInfoSeen_ = false;
     void updatePet(uint32_t nowMs);
     std::unordered_map<uint32_t, uint32_t> petCdEnd_, petCdLen_;   // spell -> local time / length (ms)
     uint32_t petGoneMs_ = 0;

@@ -1,9 +1,6 @@
 // game_spells.cpp — spell book, action bar, casting and cooldowns of GameSession (stage 5.8).
 //
-// Layouts from vMaNGOS / mangos-zero (1.12.1): Player::SendInitialSpells, Spell::SendSpellStart /
-// SendSpellGo / SendCastResult / SendInterrupted, Player::SendInitialActionButtons, Spell::
-// SendSpellCooldown. No cast counter in CMSG_CAST_SPELL yet (that arrived with TBC).
-// Opcodes checked against vMaNGOS Opcodes_1_12_1.h (stage 5q); layouts against WorldPackets::Spell.
+// WotLK 3.3.5a spell book, talents, casting and cooldown packet handling.
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -36,6 +33,7 @@ bool weaponSwingSpell(const SpellNames& names, uint32_t spell, int* which) {
 namespace {
 enum : uint16_t {
     CMSG_SET_ACTION_BUTTON = 0x128, SMSG_ACTION_BUTTONS = 0x129, SMSG_INITIAL_SPELLS = 0x12A,
+    SMSG_TALENTS_INFO = 0x4C0,
     SMSG_LEARNED_SPELL = 0x12B, CMSG_CAST_SPELL = 0x12E, CMSG_CANCEL_CAST = 0x12F,
     SMSG_CAST_FAILED = 0x130,   // SMSG_CAST_RESULT in vMaNGOS
     SMSG_SPELL_FAILED_OTHER = 0x2A6,
@@ -519,28 +517,66 @@ bool GameSession::handleSpells(uint16_t op, const Bytes& data, uint32_t nowMs) {
         case SMSG_INITIAL_SPELLS: {
             r.u8();   // unknown
             uint16_t n = r.u16();
-            if (r.bad || (size_t)n * 4 > r.left()) return true;
-            spells.clear();
+            if (r.bad || (size_t)n * 6 > r.left()) return true;
+            std::vector<uint32_t> learned;
+            learned.reserve(n);
             for (uint16_t i = 0; i < n; ++i) {
-                spells.push_back(r.u16());
+                learned.push_back(r.u32());
                 r.u16();   // slot
             }
             uint16_t cds = r.u16();
-            if (!r.bad && (size_t)cds * 14 <= r.left()) {
-                for (uint16_t i = 0; i < cds; ++i) {
-                    uint32_t spell = r.u16();
-                    r.u16();   // item
-                    const uint32_t category = r.u16();
-                    uint32_t rec = r.u32(), cat = r.u32();
-                    if (rec) { cooldownEnd_[spell] = nowMs + rec; cooldownLen_[spell] = rec; }
-                    if (category) {
-                        spellCategory_[spell] = category;
-                        if (cat) { categoryEnd_[category] = nowMs + cat; categoryLen_[category] = cat; }
-                    } else if (cat && !rec) {
-                        cooldownEnd_[spell] = nowMs + cat;
-                        cooldownLen_[spell] = cat;
-                    }
+            if (r.bad || (size_t)cds * 16 > r.left()) return true;
+            spells = std::move(learned);
+            for (uint16_t i = 0; i < cds; ++i) {
+                uint32_t spell = r.u32();
+                r.u16();   // item
+                const uint32_t category = r.u16();
+                uint32_t rec = r.u32(), cat = r.u32();
+                if (rec) { cooldownEnd_[spell] = nowMs + rec; cooldownLen_[spell] = rec; }
+                if (category) {
+                    spellCategory_[spell] = category;
+                    if (cat) { categoryEnd_[category] = nowMs + cat; categoryLen_[category] = cat; }
+                } else if (cat && !rec) {
+                    cooldownEnd_[spell] = nowMs + cat;
+                    cooldownLen_[spell] = cat;
                 }
+            }
+            return true;
+        }
+        case SMSG_TALENTS_INFO: {
+            const bool isPet = r.u8() != 0;
+            const uint32_t unspent = r.u32();
+            const uint8_t specCount = r.u8(), activeSpec = r.u8();
+            if (r.bad || specCount > 2 || (specCount && activeSpec >= specCount)) return true;
+
+            std::unordered_map<uint32_t, uint8_t> activeRanks;
+            std::array<uint16_t, 6> activeGlyphs{};
+            for (uint8_t spec = 0; spec < specCount; ++spec) {
+                const uint8_t talentCount = r.u8();
+                if (r.bad || talentCount > 128 || (size_t)talentCount * 5 > r.left()) return true;
+                std::unordered_map<uint32_t, uint8_t> ranks;
+                for (uint8_t i = 0; i < talentCount; ++i) {
+                    const uint32_t id = r.u32();
+                    const uint8_t rank = r.u8();
+                    if (r.bad || !id || rank > 5) return true;
+                    ranks[id] = rank;
+                }
+                const uint8_t glyphCount = r.u8();
+                if (r.bad || glyphCount > activeGlyphs.size() || (size_t)glyphCount * 2 > r.left()) return true;
+                std::array<uint16_t, 6> glyphs{};
+                for (uint8_t i = 0; i < glyphCount; ++i) glyphs[i] = r.u16();
+                if (r.bad) return true;
+                if (spec == activeSpec) {
+                    activeRanks = std::move(ranks);
+                    activeGlyphs = glyphs;
+                }
+            }
+            if (!r.bad && !isPet) {
+                talentRanks_ = std::move(activeRanks);
+                glyphs_ = activeGlyphs;
+                talentPointsFromInfo_ = unspent;
+                talentInfoSeen_ = true;
+                glyphInfoSeen_ = true;
             }
             return true;
         }

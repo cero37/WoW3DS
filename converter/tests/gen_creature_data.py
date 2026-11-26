@@ -9,7 +9,7 @@ Adds to a loose-file Data/ tree (use together with gen_wmo_data.py for the map):
   Character/Human/Male/HumanMale.mdx             geosets 0, 1, 5, 101, 102, 201, 301, 401, 402, 501, 701, 1301, 1501,
                                                  textures type 1 (body) and 6 (hair)
   Textures/BakedNpcTextures/HumanGuard.blp, Character/Human/Hair04_07.blp
-  DBFilesClient/CreatureModelData, CreatureDisplayInfo, CreatureDisplayInfoExtra (19 fields), CharHairGeosets,
+  DBFilesClient/ChrRaces, CreatureModelData, CreatureDisplayInfo, CreatureDisplayInfoExtra (19 fields), CharHairGeosets,
                 CharacterFacialHairStyles, CharSections
 The expectations (textures and geosets per display) are derived here independently.
 """
@@ -92,6 +92,13 @@ def dbc(fields, rows):
             else: recs += struct.pack("<I", v & 0xFFFFFFFF)
     return b"WDBC" + struct.pack("<IIII", len(rows), fields, fields * 4, len(strings)) + recs + strings
 
+race_rows = []
+for race_id, prefix in enumerate(("Human", "Orc", "Dwarf", "NightElf", "Scourge", "Tauren", "Gnome", "Troll"), 1):
+    row = [0] * 69
+    row[0], row[6] = race_id, prefix
+    race_rows.append(row)
+write("DBFilesClient/ChrRaces.dbc", dbc(69, race_rows))
+
 write("DBFilesClient/CreatureModelData.dbc", dbc(6, [
     [11, 0, "Creature\\Testwolf\\Testwolf.mdx", 1, 1.5, 0],   # 6.60: the model asks for 1.5 of its own
     [49, 0, "Character\\Human\\Male\\HumanMale.mdx", 1, 1.0, 0],
@@ -106,12 +113,12 @@ write("DBFilesClient/CreatureDisplayInfo.dbc", dbc(11, [
 # Equipment slots from field 8: head, shoulder, shirt, chest(11), belt, legs, feet(14), wrist, gloves, tabard.
 write("DBFilesClient/CreatureDisplayInfoExtra.dbc", dbc(19, [
     [500, 1, 0, 2, 3, 4, 7, 2] + [0, 0, 0, 7001, 0, 0, 7002, 0, 0, 0] + ["HumanGuard.blp"]]))
-# ItemDisplayInfo, vanilla layout (23 fields): ID, models x2, textures x2, icon, GeosetGroup1..3, flags, spell visual, sound,
-# HelmetGeosetVis x2, texture regions ArmUpper..Foot (14..21), item visual.
+# WotLK ItemDisplayInfo: ID, models x2, textures x2, icon, unknown, GeosetGroup1..3, flags, spell visual, sound,
+# HelmetGeosetVis x2, texture regions ArmUpper..Foot (15..22), item visual, particle colour.
 def idi(did, ml="", mr="", tl="", tr="", gg=(0, 0, 0), hv=(0, 0), regions=()):
     reg = list(regions) + [""] * (8 - len(regions))
-    return [did, ml, mr, tl, tr, "", gg[0], gg[1], gg[2], 0, 0, 0, hv[0], hv[1]] + reg + [0]
-write("DBFilesClient/ItemDisplayInfo.dbc", dbc(23, [
+    return [did, ml, mr, tl, tr, "", 0, gg[0], gg[1], gg[2], 0, 0, 0, hv[0], hv[1]] + reg + [0, 0]
+write("DBFilesClient/ItemDisplayInfo.dbc", dbc(25, [
     idi(7001, gg=(0, 0, 1)), idi(7002, gg=(1, 0, 0)),
     idi(7101, gg=(2, 0, 0), regions=("TestRobe", "", "", "TestRobe", "Nothere")),       # chest: sleeves, torso art, one missing
     idi(7102, ml="TestHelm", tl="TestHelm", hv=(1, 2)),                                  # helmet: men keep hair, women lose it
@@ -137,7 +144,7 @@ TC = "Item\\TextureComponents\\"
 write(TC + "ArmUpperTexture\\TestRobe_M.blp", blp_rgba(128, 64, lambda x, y: (200, 30, 30, 255)))
 write(TC + "TorsoUpperTexture\\TestRobe_U.blp", blp_rgba(128, 64, lambda x, y: (30, 200, 30, 200)))
 write("DBFilesClient/CharHairGeosets.dbc", dbc(6, [[1, 1, 0, 4, 5, 0], [2, 1, 0, 3, 1, 1]]))
-write("DBFilesClient/CharacterFacialHairStyles.dbc", dbc(8, [[1, 0, 2, 2, 1, 1, 0, 0]]))
+write("DBFilesClient/CharacterFacialHairStyles.dbc", dbc(10, [[1, 0, 2, 0, 0, 0, 2, 1, 1, 0]]))
 # ---- players (stage 5.5): CharSections rows of human male. (section, variation, colour, tex1, tex2);
 # images are made of 2x2-aligned blocks so the converter's halving is exact and the composite can be
 # predicted here pixel for pixel.
@@ -168,7 +175,8 @@ cs_rows = [  # (section, variation, colour, tex1, tex2) for race 1 sex 0, in tab
     (4, 0, 0, HM + "HumanMaleNakedPelvisSkin00_00.blp", ""),
     (3, 4, 3, "Character\\Human\\Hair04_03.blp", ""),
 ]
-write("DBFilesClient/CharSections.dbc", dbc(10, [[k + 1, 1, 0, sec, var, col, t1, t2, "", 0]
+# WotLK CharSections: ID, race, sex, section, TextureName[3], flags, variation, colour.
+write("DBFilesClient/CharSections.dbc", dbc(10, [[k + 1, 1, 0, sec, t1, t2, "", 0, var, col]
                                                  for k, (sec, var, col, t1, t2) in enumerate(cs_rows)]))
 
 # ------------------------------------------------------------ expectations
@@ -287,9 +295,9 @@ write("Interface/Glues/Models/UI_MainMenu/UI_MainMenu.m2",
 # CharStartOutfit (1.12: ID, race|class<<8|sex<<16|outfit<<24, ItemID[12], DisplayItemID[12], InventoryType[12])
 outfit = [1, 1 | (1 << 8)] + [38, 39] + [0] * 10 + [7101, 7002] + [0] * 10 + [5, 8] + [0] * 10
 write("DBFilesClient/CharStartOutfit.dbc", dbc(38, [outfit]))
-# AreaTable (1.12: ID, map, parent, bit, flags, 5..10 sound / music / level, 11 name enUS, 12..18 other locales, 19 flags)
-write("DBFilesClient/AreaTable.dbc", dbc(20, [[12, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, "Elwynn Forest"] + [""] * 7 + [0],
-                                            [9, 0, 12, 2, 0, 0, 0, 0, 0, 0, 1, "Northshire Valley"] + [""] * 7 + [0]]))
+# WotLK AreaTable: ID, ContinentID, ParentAreaID, ... ExplorationLevel, AreaName[16].
+write("DBFilesClient/AreaTable.dbc", dbc(27, [[12, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, "Elwynn Forest"] + [""] * 15,
+                                            [9, 0, 12, 2, 0, 0, 0, 0, 0, 0, 1, "Northshire Valley"] + [""] * 15]))
 write("Interface/GlueXML/GlueStrings.lua", b'RACE_INFO_HUMAN = "Humans are a test race.\\nSecond line with a \\"quote\\".";\n'
       b'CLASS_INFO_WARRIOR = "Warriors hit things.";\nNOT_A_STRING = 5;\n')
 exp["glue"] = {"scenes": [0, 1], "stand": [230.0, 10.0, 5.0], "outfit": [[7101, 5], [7002, 8]]}

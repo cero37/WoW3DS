@@ -430,6 +430,15 @@ bool ObjectTable::parseFields(Reader& r, WorldObject* o) {
 
 bool ObjectTable::parseMovementBlock(Reader& r, WorldObject& o, uint32_t nowMs) {
     uint16_t uf = r.u16();
+    constexpr uint16_t knownFlags = UPDATEFLAG_SELF | UPDATEFLAG_TRANSPORT | UPDATEFLAG_HAS_TARGET | UPDATEFLAG_UNKNOWN |
+                                    UPDATEFLAG_LOWGUID | UPDATEFLAG_LIVING | UPDATEFLAG_STATIONARY_POSITION |
+                                    UPDATEFLAG_VEHICLE | UPDATEFLAG_POSITION | UPDATEFLAG_ROTATION;
+    const uint16_t positionFlags = uf & (UPDATEFLAG_LIVING | UPDATEFLAG_STATIONARY_POSITION | UPDATEFLAG_POSITION);
+    if (r.bad || (uf & ~knownFlags) ||
+        (positionFlags && (positionFlags & (uint16_t)(positionFlags - 1)))) {
+        stats.lastError = "bad movement update flags";
+        return false;
+    }
     if (uf & UPDATEFLAG_SELF) o.self = true;
     if (uf & UPDATEFLAG_LIVING) {
         MovementInfo& m = o.mv;
@@ -519,7 +528,11 @@ bool ObjectTable::parseUpdate(const uint8_t* p, size_t n, uint32_t nowMs) {
     }
     for (uint32_t i = 0; i < count; ++i) {
         uint8_t type = r.u8();
-        if (r.bad || type > UPD_NEAR) { stats.lastError = "bad update block type " + std::to_string(type); return false; }
+        if (r.bad || type > UPD_NEAR) {
+            stats.lastError = "bad update block type " + std::to_string(type) + " at block " + std::to_string(i) +
+                              " offset " + std::to_string(r.pos ? r.pos - 1 : 0);
+            return false;
+        }
         stats.blocks[type]++;
         switch (type) {
             case UPD_VALUES: {
@@ -574,7 +587,7 @@ bool ObjectTable::parseUpdate(const uint8_t* p, size_t n, uint32_t nowMs) {
             case UPD_OUT_OF_RANGE:
             case UPD_NEAR: {
                 uint32_t k = r.u32();
-                if (r.bad || k > 65536) return false;
+                if (r.bad || k > 65536 || k > r.left()) return false;
                 for (uint32_t j = 0; j < k; ++j) {
                     uint64_t g = r.packedGuid();
                     { BlockNote bn; bn.type = (uint8_t)(type == UPD_OUT_OF_RANGE ? 3 : 4); bn.guid = g; noteBlock(bn); }   // 7.28
@@ -789,6 +802,7 @@ bool ObjectTable::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
             std::string name = r.cstr();
             r.cstr(); r.cstr(); r.cstr();
             std::string sub = r.cstr();
+            if (r.bad) return true;
             creatureNames_[entry] = {name, sub};
             r.u32();   // type flags
             const uint32_t ctype = r.u32();
@@ -809,9 +823,10 @@ bool ObjectTable::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
             gi.type = r.u32();
             r.u32();   // display id
             std::string name = r.cstr();
-            goNames_[entry] = name;
             r.cstr(); r.cstr(); r.cstr();   // name2..4
             if (r.left() > 96) r.cstr();     // 1.12.1: the icon name
+            if (r.bad) return true;
+            goNames_[entry] = name;
             for (int k = 0; k < 24 && r.left() >= 4; ++k) gi.data[k] = r.u32();
             setGoInfo(entry, gi);
             for (auto& [g, o] : objs_)

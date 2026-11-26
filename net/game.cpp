@@ -10,6 +10,7 @@ enum : uint16_t {
     SMSG_NEW_WORLD = 0x03E, SMSG_TRANSFER_PENDING = 0x03F,
     SMSG_LOGIN_SETTIMESPEED = 0x042, SMSG_GAMETIME_UPDATE = 0x043, SMSG_GAMETIME_SET = 0x045, SMSG_GAMESPEED_SET = 0x047,
     SMSG_ACCOUNT_DATA_TIMES = 0x209, SMSG_LOGIN_VERIFY_WORLD = 0x236, SMSG_FEATURE_SYSTEM_STATUS = 0x33C,
+    SMSG_TIME_SYNC_REQ = 0x390, CMSG_TIME_SYNC_RESP = 0x391,
     SMSG_TUTORIAL_FLAGS = 0x0FD, CMSG_READY_FOR_ACCOUNT_DATA_TIMES = 0x4FF,
     SMSG_CONVERT_RUNE = 0x486, SMSG_RESYNC_RUNES = 0x487, SMSG_ADD_RUNE_POWER = 0x488,
     SMSG_FORCE_RUN_SPEED_CHANGE = 0x0E2, CMSG_FORCE_RUN_SPEED_CHANGE_ACK = 0x0E3,
@@ -83,6 +84,11 @@ void GameSession::attach(WorldClient& wc, uint32_t nowMs) {
     itemWanted_.clear();
     itemEnchantTimers_.clear();   // 7.16: enchant countdowns belong to the old session
     spells.clear();
+    talentInfoSeen_ = false;
+    talentPointsFromInfo_ = 0;
+    talentRanks_.clear();
+    glyphs_.fill(0);
+    glyphInfoSeen_ = false;
     actionBar = {};
     actionBarSeen = false;
     cast = CastState();
@@ -348,6 +354,10 @@ bool GameSession::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
             r.u32();
             r.u8();
             const uint32_t mask = r.u32();
+            if (r.bad || (mask & ~0xFFu)) return true;
+            uint32_t count = 0;
+            for (uint32_t bits = mask; bits; bits &= bits - 1) ++count;
+            if (count > r.left() / 4) return true;
             for (uint32_t i = 0; i < 8; ++i)
                 if (mask & (1u << i)) r.u32();
             return true;
@@ -358,6 +368,17 @@ bool GameSession::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
         case SMSG_FEATURE_SYSTEM_STATUS:
         case SMSG_LOGIN_VERIFY_WORLD:
             return true;
+        case SMSG_TIME_SYNC_REQ: {
+            const uint32_t counter = r.u32();
+            if (r.bad || r.left() != 4) return true;
+            r.u32();
+            if (r.bad) return true;
+            Writer w;
+            w.u32(counter);
+            w.u32(nowMs);
+            send(CMSG_TIME_SYNC_RESP, w.b, nowMs);
+            return true;
+        }
         case MoveOp::TeleportAck: {   // server-initiated teleport within the map
             uint64_t g = r.packedGuid();
             uint32_t counter = r.u32();
@@ -461,7 +482,6 @@ bool GameSession::handle(uint16_t op, const Bytes& data, uint32_t nowMs) {
         case SMSG_FORCE_FLIGHT_BACK_SPEED_CHANGE: {
             uint64_t g = r.packedGuid();
             uint32_t counter = r.u32();
-            if (op == SMSG_FORCE_RUN_SPEED_CHANGE) r.u8();
             float speed = r.f32();
             if (r.bad || !(speed > 0.1f && speed < 100.0f)) return true;
             if (g != self_) return true;

@@ -34,7 +34,7 @@ enum : uint32_t {
 namespace MoveExtraFlag {
 enum : uint16_t {
     AlwaysAllowPitching = 0x0020,
-    InterpolatedMovement = 0x0400,
+    InterpolatedMovement = 0x0200,
 };
 }
 

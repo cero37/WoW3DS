@@ -3,7 +3,8 @@
 //   music.txt, music/ zone music (AreaTable -> ZoneMusic -> SoundEntries, MP3s copied as they are) and ambience
 //                    (SoundAmbience, WAV loops -> IMA ADPCM)
 //   areas_<map>.bin  the area of every terrain chunk (ADT MCNK headers), so the 3DS knows the zone it is in
-// 1.12 layouts: SoundEntries ID, type, Name 2, File[10] 3-12, Freq[10] 13-22, DirectoryBase 23, Volume 24 (float);
+// WotLK 3.3.5a SoundEntries: ID, Name 1, File[10] 2-11, Freq[10] 12-21, DirectoryBase 22, Volume 23.
+// The older 1.12 layout (ID, type, Name 2, File[10] 3-12, DirectoryBase 23, Volume 24) is also accepted.
 // AreaTable ID, map 1, parent 2, ..., ambience 7, ZoneMusic 8; ZoneMusic ID, name, silMin[2] 2-3, silMax[2] 4-5,
 // sound[2] 6-7 (day, night); SoundAmbience ID, day, night; Map ID, Directory 1.
 #include "conv.h"
@@ -278,19 +279,37 @@ bool writeFile(const std::string& path, const void* d, size_t n) {
     return true;
 }
 
+struct SoundEntriesLayout {
+    uint32_t name, firstFile, directory, volume, minDistance, cutoff;
+};
+
+SoundEntriesLayout soundEntriesLayout(const DbcTable& se) {
+    uint32_t nonzero = 0, legacyTypes = 0;
+    for (uint32_t r = 0; r < se.records; ++r) {
+        const uint32_t v = se.u32(r, 1);
+        if (v) {
+            ++nonzero;
+            if (v <= 16) ++legacyTypes;
+        }
+    }
+    if (se.fields >= 29 || (se.fields < 28 && nonzero && legacyTypes * 2 >= nonzero))
+        return {2, 3, 23, 24, 26, 27};
+    return {1, 2, 22, 23, 25, 26};
+}
+
 struct SoundRow { uint32_t row = 0; std::vector<std::string> files; float volume = 1; };
 
-SoundRow soundRow(const DbcTable& se, uint32_t r) {
+SoundRow soundRow(const DbcTable& se, uint32_t r, const SoundEntriesLayout& layout) {
     SoundRow s;
     s.row = r;
-    std::string dir = se.fields > 23 ? se.str(r, 23) : std::string();
-    for (uint32_t c = 3; c < 13 && c < se.fields; ++c) {
+    std::string dir = se.fields > layout.directory ? se.str(r, layout.directory) : std::string();
+    for (uint32_t c = layout.firstFile; c < layout.firstFile + 10 && c < se.fields; ++c) {
         std::string f = se.str(r, c);
         if (f.empty()) continue;
         s.files.push_back(dir.empty() ? f : dir + "\\" + f);
     }
-    if (se.fields > 24) {
-        float v = se.f32(r, 24);
+    if (se.fields > layout.volume) {
+        float v = se.f32(r, layout.volume);
         if (v > 0.01f && v <= 1.0f) s.volume = v;
     }
     return s;
@@ -348,6 +367,7 @@ bool exportAreas(const DataDir& data, uint32_t mapId, const std::string& dir, co
 struct WorldCtx {
     const DbcTable& se;
     const std::unordered_map<uint32_t, uint32_t>& byId;
+    SoundEntriesLayout layout;
     std::set<uint32_t> used;
     std::string txt;
     // UI stage 8: voices that SoundEntries does not list (found by their file names in the archives) get ids of their own
@@ -356,7 +376,7 @@ struct WorldCtx {
     std::map<uint32_t, int> variants;
     std::string nameOf(uint32_t id) const {
         auto it = byId.find(id);
-        return it == byId.end() ? std::string() : lower(se.str(it->second, 2));
+        return it == byId.end() ? std::string() : lower(se.str(it->second, layout.name));
     }
     bool valid(uint32_t id) const { return id && (byId.count(id) || extra.count(id)); }
 };
@@ -526,7 +546,14 @@ void exportWorldTables(const DataDir& data, WorldCtx& w, bool verbose) {
     DbcTable spell, sv, svk;
     if (spell.load(data, "Spell.dbc") && sv.load(data, "SpellVisual.dbc") && svk.load(data, "SpellVisualKit.dbc")) {
         std::map<uint32_t, uint32_t> kitSound;
-        const int cKit = bestColumn(w, svk, [](const std::string& n) {
+        int cKit = -1;
+        if (svk.fields > 15) {
+            uint32_t nz = 0, ok = 0;
+            for (uint32_t r = 0; r < svk.records; ++r)
+                if (uint32_t v = svk.u32(r, 15)) { ++nz; ok += w.valid(v) ? 1 : 0; }
+            if (nz && ok * 10 >= nz * 9) cKit = 15;   // WotLK SpellVisualKit.SoundID
+        }
+        if (cKit < 0) cKit = bestColumn(w, svk, [](const std::string& n) {
             for (const char* k : {"cast", "impact", "spell", "missile", "buff", "heal", "fire", "frost", "holy", "shadow",
                                   "nature", "arcane", "lightning", "aura", "shield", "summon"})
                 if (has(n, k)) return true;
@@ -594,6 +621,40 @@ const char* const kErrTokens[] = {
     "cantdropsoulbounditem", "notenoughmoney", "cantlearnspell", "loottoofar", "lootdidntkill", "cantloot",
 };
 
+const char* vocalUiToken(uint32_t id) {
+    switch (id) {
+        case 0: return "inventoryfull";
+        case 1: return "noammo";
+        case 2: return "cantequiplevel";
+        case 3: return "cantequipever";
+        case 4: return "cantdropsoulbounditem";
+        case 5: return "itemcooldown";
+        case 12: return "spellcooldown";
+        case 13: return "cantlearnspell";
+        case 15: return "nomana";
+        case 17: return "cantloot";
+        case 25: return "notabag";
+        case 29: return "bagfull";
+        case 30: return "itemmaxcount";
+        case 31: return "lootdidntkill";
+        case 35: return "loottoofar";
+        case 38: return "invalidattacktarget";
+        case 40: return "notenoughmoney";
+        case 41:
+        case 43: return "cantequipskill";
+        case 44: return "notequippable";
+        case 45: return "genericnotarget";
+        case 46: return "outofrange";
+        case 50: return "abilitycooldown";
+        case 51: return "cantuseitem";
+        case 52: return "chestinuse";
+        case 61: return "itemlocked";
+        case 63: return "norage";
+        case 64: return "noenergy";
+        default: return nullptr;
+    }
+}
+
 std::string baseName(const std::string& path) {
     size_t k = path.find_last_of("\\/");
     return lower(k == std::string::npos ? path : path.substr(k + 1));
@@ -636,7 +697,7 @@ void exportVoices(const DataDir& data, WorldCtx& w, bool verbose) {
     // what every SoundEntries row's first file is called
     std::vector<std::pair<uint32_t, std::string>> firstFile;   // sound id, lower-case base name
     for (const auto& [id, r] : w.byId) {
-        SoundRow sr = soundRow(w.se, r);
+        SoundRow sr = soundRow(w.se, r, w.layout);
         if (!sr.files.empty()) firstFile.push_back({id, baseName(sr.files[0])});
     }
     std::sort(firstFile.begin(), firstFile.end());   // the same picks on every run
@@ -655,19 +716,39 @@ void exportVoices(const DataDir& data, WorldCtx& w, bool verbose) {
         if (std::find_if(std::begin(kErrTokens), std::end(kErrTokens), [&](const char* t) { return tok == t; }) == std::end(kErrTokens)) continue;
         err.emplace(std::make_tuple(race, gender, tok), id);
     }
-    size_t errListed = err.size(), errProbed = 0;
+    size_t errListed = err.size(), errProbed = 0, errVocalUi = 0;
+    DbcTable vocal;
+    const bool vocalLoaded = vocal.load(data, "VocalUISounds.dbc");
+    const bool vocalLayoutValid = vocalLoaded && vocal.fields >= 7;
+    if (vocalLoaded) {
+        if (vocal.fields < 7) {
+            std::fprintf(stderr, "sound: VocalUISounds.dbc has %u fields; expected 7\n", vocal.fields);
+        } else {
+            for (uint32_t r = 0; r < vocal.records; ++r) {
+                const char* token = vocalUiToken(vocal.u32(r, 1));
+                const uint32_t race = vocal.u32(r, 2);
+                if (!token || !race) continue;
+                for (uint32_t gender = 0; gender < 2; ++gender) {
+                    uint32_t sound = vocal.u32(r, 3 + gender);
+                    if (!w.valid(sound)) sound = vocal.u32(r, 5 + gender);
+                    if (!w.valid(sound)) continue;
+                    err[std::make_tuple(race, gender, std::string(token))] = sound;
+                    ++errVocalUi;
+                }
+            }
+        }
+    }
     for (const VoiceRace& r : kVoiceRaces) {   // a race / gender SoundEntries has none of: the files by their usual names
         if (!r.errDir) continue;
         for (uint32_t g = 0; g < 2; ++g) {
-            bool any = false;
-            for (const auto& [key, id] : err) any |= std::get<0>(key) == r.id && std::get<1>(key) == g;
-            if (any) continue;
             const std::string gw = g ? "Female" : "Male";
             const std::string dir = std::string("Sound\\Character\\") + r.folder + "\\" + r.errDir + gw + "ErrorMessages\\";
             for (const char* t : kErrTokens) {
+                const auto key = std::make_tuple(r.id, g, std::string(t));
+                if (err.count(key)) continue;
                 std::vector<std::string> files = probeFiles(data, dir + r.errFile + gw + "_err_" + t, 8);
                 if (files.empty()) continue;
-                err[std::make_tuple(r.id, g, std::string(t))] = synthetic(std::move(files), 2);
+                err[key] = synthetic(std::move(files), 2);
                 ++errProbed;
             }
         }
@@ -678,6 +759,8 @@ void exportVoices(const DataDir& data, WorldCtx& w, bool verbose) {
         w.used.insert(id);
         if (!w.variants.count(id)) w.variants[id] = 2;
     }
+    if (verbose && vocalLayoutValid)
+        std::printf("  VocalUISounds: %zu mapped race/gender/event sounds\n", errVocalUi);
 
     // ---- NPC voices: NPCSounds (greeting / farewell / pissed columns found by the names of the rows they point at)
     DbcTable npc, cdi, cdx;
@@ -795,9 +878,9 @@ bool writeWorldBank(const DataDir& data, const SoundOptions& so, WorldCtx& w, co
         if (auto ex = w.extra.find(id); ex != w.extra.end()) {
             s.files = ex->second;
         } else {
-            s = soundRow(w.se, w.byId.at(id));
-            if (w.se.fields > 27) {
-                float a = w.se.f32(s.row, 26), b = w.se.f32(s.row, 27);
+            s = soundRow(w.se, w.byId.at(id), w.layout);
+            if (w.se.fields > w.layout.cutoff) {
+                float a = w.se.f32(s.row, w.layout.minDistance), b = w.se.f32(s.row, w.layout.cutoff);
                 if (a > 0.5f && a < 100 && b > a && b < 500) { minD = a; cut = b; }
             }
         }
@@ -949,8 +1032,8 @@ void evalCamTrack(const CamTrack& tr, uint32_t t, float out[3]) {
 }
 }  // namespace
 
-size_t exportCinematics(const DataDir& data, const DbcTable& se, const std::unordered_map<uint32_t, uint32_t>& byId, const SoundOptions& so,
-                        const std::string& base, bool verbose) {
+size_t exportCinematics(const DataDir& data, const DbcTable& se, const SoundEntriesLayout& layout,
+                        const std::unordered_map<uint32_t, uint32_t>& byId, const SoundOptions& so, const std::string& base, bool verbose) {
     DbcTable seq, cam;
     if (!seq.load(data, "CinematicSequences.dbc") || !cam.load(data, "CinematicCamera.dbc") || seq.fields < 3 || cam.fields < 7) {
         std::printf("  cinematics: CinematicSequences / CinematicCamera.dbc not found\n");
@@ -963,7 +1046,7 @@ size_t exportCinematics(const DataDir& data, const DbcTable& se, const std::unor
     auto narration = [&](uint32_t soundId, const std::string& name, int* vol) -> std::string {
         auto it = byId.find(soundId);
         if (!soundId || it == byId.end()) return std::string();
-        SoundRow s = soundRow(se, it->second);
+        SoundRow s = soundRow(se, it->second, layout);
         *vol = (int)std::lround(s.volume * 100);
         for (const std::string& path : s.files) {
             std::vector<uint8_t> f;
@@ -1053,14 +1136,19 @@ bool convertSound(const SoundOptions& so, const DataDir& data, bool verbose) {
     fs::create_directories(so.outDir, ec);
     const std::string base = so.outDir.empty() ? std::string() : so.outDir + "/";
     DbcTable se;
-    if (!se.load(data, "SoundEntries.dbc") || se.fields < 13) {
+    if (!se.load(data, "SoundEntries.dbc")) {
         std::fprintf(stderr, "sound: SoundEntries.dbc not found\n");
+        return false;
+    }
+    const SoundEntriesLayout layout = soundEntriesLayout(se);
+    if (se.fields <= layout.firstFile) {
+        std::fprintf(stderr, "sound: SoundEntries.dbc has an unsupported layout\n");
         return false;
     }
     std::unordered_map<std::string, uint32_t> byName;
     std::unordered_map<uint32_t, uint32_t> byId;
     for (uint32_t r = 0; r < se.records; ++r) {
-        byName.emplace(lower(se.str(r, 2)), r);
+        byName.emplace(lower(se.str(r, layout.name)), r);
         byId[se.u32(r, 0)] = r;
     }
 
@@ -1103,7 +1191,7 @@ bool convertSound(const SoundOptions& so, const DataDir& data, bool verbose) {
                 std::string best;
                 for (const auto& [k, r] : byName) {
                     if (!best.empty() && k >= best) continue;
-                    for (const std::string& f : soundRow(se, r).files)
+                    for (const std::string& f : soundRow(se, r, layout).files)
                         if (lower(f).find(w) != std::string::npos) { best = k; break; }
                 }
                 it = best.empty() ? byName.end() : byName.find(best);
@@ -1116,7 +1204,7 @@ bool convertSound(const SoundOptions& so, const DataDir& data, bool verbose) {
                 used = nm;
             } else {
                 if (it == byName.end()) continue;
-                s = soundRow(se, it->second);
+                s = soundRow(se, it->second, layout);
             }
             for (size_t k = 0; k < s.files.size() && k < 3; ++k) {
                 std::vector<uint8_t> f;
@@ -1158,7 +1246,7 @@ bool convertSound(const SoundOptions& so, const DataDir& data, bool verbose) {
 
     // ---- the world: creatures, weapons, spells, footsteps (sounds.txt + world.w3ds)
     if (so.world) {
-        WorldCtx w{se, byId, {}, "# wow3ds world sounds: D display csd | K csd aggro death wound woundCrit attack attackCrit footstep | "
+        WorldCtx w{se, byId, layout, {}, "# wow3ds world sounds: D display csd | K csd aggro death wound woundCrit attack attackCrit footstep | "
                                  "W sub impact crit | F footstep sound | Q visual precast cast impact missile channel | P spell visual | "
                                  "L liquid-sound-kind sound | N display greeting farewell pissed | V race gender token sound | T textEmote race gender sound\n"};
         exportWorldTables(data, w, verbose);
@@ -1189,7 +1277,8 @@ bool convertSound(const SoundOptions& so, const DataDir& data, bool verbose) {
                 for (const char* k : wt.keys) {
                     if (id) break;
                     for (uint32_t r = 0; r < se.records && !id; ++r)   // in table order: the same pick every run
-                        if (has(lower(se.str(r, 2)), k) || has(lower(se.str(r, 3)), k)) id = se.u32(r, 0);
+                        if (has(lower(se.str(r, layout.name)), k) || has(lower(se.str(r, layout.firstFile)), k))
+                            id = se.u32(r, 0);
                 }
                 if (!id) continue;
                 w.txt += std::string("L\t") + wt.kind + "\t" + std::to_string(id) + "\n";
@@ -1253,7 +1342,7 @@ bool convertSound(const SoundOptions& so, const DataDir& data, bool verbose) {
         ++done;
         auto it = byId.find(id);
         if (it == byId.end()) return;
-        SoundRow s = soundRow(se, it->second);
+        SoundRow s = soundRow(se, it->second, layout);
         std::string line = std::string(isAmb ? "B" : "S") + "\t" + std::to_string(id) + "\t" + std::to_string(std::lround(s.volume * 100));
         int k = 0, kept = 0;
         for (const std::string& path : s.files) {
@@ -1289,17 +1378,17 @@ bool convertSound(const SoundOptions& so, const DataDir& data, bool verbose) {
     if (so.music) {
         int best = -1, bestScore = -1;
         for (uint32_t r = 0; r < se.records; ++r) {
-            SoundRow s = soundRow(se, r);
+            SoundRow s = soundRow(se, r, layout);
             bool glue = false;
             for (const std::string& f : s.files) glue |= lower(f).find("gluescreenmusic") != std::string::npos;
             if (!glue) continue;
-            const std::string nm = lower(se.str(r, 2));
+            const std::string nm = lower(se.str(r, layout.name));
             int score = 1 + (nm.find("login") != std::string::npos ? 4 : 0) + (nm.find("main") != std::string::npos ? 2 : 0);
             for (const std::string& f : s.files) score += lower(f).find("main_theme") != std::string::npos ? 2 : 0;
             if (score > bestScore) { bestScore = score; best = (int)r; }
         }
         SoundRow g;
-        if (best >= 0) g = soundRow(se, (uint32_t)best);
+        if (best >= 0) g = soundRow(se, (uint32_t)best, layout);
         else g.files = {"Sound\\Music\\GlueScreenMusic\\wow_main_theme.mp3"};
         std::string line = "G\t" + std::to_string(std::lround(g.volume * 100));
         int k = 0;
@@ -1312,12 +1401,13 @@ bool convertSound(const SoundOptions& so, const DataDir& data, bool verbose) {
             line += "\t" + name;
         }
         if (k) txt += line + "\n";
-        std::printf("  login screen music: %s\n", k ? (best >= 0 ? se.str((uint32_t)best, 2).c_str() : "wow_main_theme.mp3") : "not found");
+        std::printf("  login screen music: %s\n",
+                    k ? (best >= 0 ? se.str((uint32_t)best, layout.name).c_str() : "wow_main_theme.mp3") : "not found");
     }
     progressDone("music: %zu music + %zu ambience sounds, %zu files, %.0f MB", musicSounds.size(), ambSounds.size(), files,
                  bytes / 1048576.0);
 
-    if (so.music) exportCinematics(data, se, byId, so, base, verbose);   // 7.04
+    if (so.music) exportCinematics(data, se, layout, byId, so, base, verbose);   // 7.04
     // ---- which area each terrain chunk belongs to
     DbcTable maps;
     if (maps.load(data, "Map.dbc")) {

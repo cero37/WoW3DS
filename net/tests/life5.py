@@ -13,7 +13,7 @@ ITEM stack 14 / durability 46,47, CONTAINER num slots 48 / slot 1 at 50, CORPSE 
 import math, struct, time
 
 from stage5 import (World5, RESULTS5, SPAWN, CREATURE_GUID, create, values, update_packet, unit_fields,
-                    living_block, position_block, packguid, movement_info, UF_SELF, UF_ALL, UF_HIGHGUID)
+                    living_block, position_block, packguid, unpackguid, movement_info, UF_SELF, UF_ALL, UF_HIGHGUID)
 
 F_WATERWALK = 0x10000000
 INV, COIN, PFLAGS = 486, 1176, 190
@@ -182,20 +182,26 @@ class WorldLife(World5):
     # ---- client packets
     def client_packet(self, op, body):
         if op in self.MOVE_OPS and RESULTS5["active_mover"]:
-            if len(body) >= 4:
-                flags, = struct.unpack_from("<I", body, 0)
+            try:
+                _, movement_offset = unpackguid(body)
+                flags, = struct.unpack_from("<I", body, movement_offset)
+            except (IndexError, struct.error):
+                self.err("movement packet missing WotLK mover/flags")
+                return True
+            if len(body) >= movement_offset + 4:
                 if self.ghost and self.pending_flag is None:
                     L["ghost_moves"] += 1
                     if not flags & F_WATERWALK: L["ghost_moves_without_flag"] += 1
                 if not self.ghost and not self.dead and self.pending_flag is None and flags & F_WATERWALK:
                     L["alive_moves_with_flag"] += 1
-            if self.dead and not self.ghost and len(body) >= 4 and struct.unpack_from("<I", body)[0] & 0xF:
+            if self.dead and not self.ghost and len(body) >= movement_offset + 4 and flags & 0xF:
                 self.err("moving while dead (before releasing the spirit)")
             return super().client_packet(op, body)
         if op == 0xE3 and 0xE3 in self.expect_ack:     # speed ACK with the speed we asked for (ghost 8.75, alive 7)
-            g, cnt = struct.unpack_from("<QI", body, 0)
+            g, off = unpackguid(body)
+            cnt, = struct.unpack_from("<I", body, off); off += 4
             if g != self.me or cnt != self.expect_ack.pop(0xE3): self.err("speed ACK guid/counter")
-            (flags, *_), end = self.parse_mi(body, 12)
+            (flags, *_), end = self.parse_mi(body, off)
             sp, = struct.unpack_from("<f", body, end)
             if abs(sp - self.want_speed) > 1e-4 or len(body) != end + 4: self.err(f"speed ACK {sp} size {len(body)}")
             self.speed = sp

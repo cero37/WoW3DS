@@ -570,7 +570,7 @@ void WorldClient::handle(Packet& p) {
                 r.u32();  // customize flags
                 c.firstLogin = r.u8() != 0;
                 r.skip(12);   // pet display, level, family
-                for (int k = 0; k < 23; ++k) {
+                for (int k = 0; k < 19; ++k) {
                     uint32_t display = r.u32();
                     uint8_t inventoryType = r.u8();
                     r.u32();  // enchant visual
@@ -602,6 +602,7 @@ void WorldClient::handle(Packet& p) {
             fail("character login failed (code " + std::to_string(r.u8()) + ")");
             return;
         case SMSG_LOGIN_VERIFY_WORLD:
+            if (r.left() != 20) { fail("malformed SMSG_LOGIN_VERIFY_WORLD"); return; }
             map_ = r.u32();
             pos_[0] = r.f32(); pos_[1] = r.f32(); pos_[2] = r.f32();
             orient_ = r.f32();

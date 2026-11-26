@@ -8,7 +8,8 @@
 //   CharHairGeosets: Race 1, Sex 2, Variation 3, Geoset 4, Showscalp 5
 //   CharacterFacialHairStyles: Race 0, Sex 1, Variation 2, then Geoset100/300/200 at 3/4/5, or at 6/7/8 when the
 //                        file has 9+ fields (WoWee detectFacialHairFields)
-//   CharSections: Race 1, Sex 2, BaseSection 3, Variation 4, Color 5, Texture1 6
+//   CharSections (10 fields): Race 1, Sex 2, BaseSection 3; WotLK TextureName[3] 4-6, Flags 7, Variation 8, Color 9
+//                         (the older variation-first layout has Variation 4, Color 5, TextureName[3] 6-8, Flags 9)
 // Humanoid geosets (NPCs here, players on the 3DS): w3d_humanoid_geosets in common/w3d_character.h.
 // Players (--players): one CHRS entry per race/sex + CIMG body texture layers, see characters below.
 #include "conv.h"
@@ -54,6 +55,52 @@ struct Dbc {
         return std::string(s, strnlen(s, strSize - off));
     }
 };
+
+struct CharSectionsLayout {
+    uint32_t race = 1, sex = 2, baseSection = 3, variation = 4, color = 5;
+    uint32_t texture1 = 6, texture2 = 7, texture3 = 8, flags = 9;
+};
+
+CharSectionsLayout detectCharSectionsLayout(const Dbc& sections) {
+    CharSectionsLayout layout;
+    if (sections.fields < 10 || !sections.records) return layout;
+    auto isTexturePath = [](std::string path) {
+        std::transform(path.begin(), path.end(), path.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+        return path.find(".blp") != std::string::npos && (path.find('\\') != std::string::npos || path.find('/') != std::string::npos);
+    };
+    uint32_t wotlkPaths = 0, legacyPaths = 0;
+    for (uint32_t r = 0; r < sections.records; ++r) {
+        wotlkPaths += isTexturePath(sections.str(r, 4)) + isTexturePath(sections.str(r, 5));
+        legacyPaths += isTexturePath(sections.str(r, 7)) + isTexturePath(sections.str(r, 8));
+    }
+    if (wotlkPaths != legacyPaths) {
+        if (wotlkPaths > legacyPaths) {
+            layout.texture1 = 4;
+            layout.texture2 = 5;
+            layout.texture3 = 6;
+            layout.flags = 7;
+            layout.variation = 8;
+            layout.color = 9;
+        }
+        return layout;
+    }
+    const uint32_t samples = std::min(sections.records, 20u);
+    uint32_t large = 0, small = 0;
+    for (uint32_t r = 0; r < samples; ++r) {
+        // WotLK stores a string offset at field 4; the variation-first layout stores a small index there.
+        if (sections.u32(r, layout.variation) > 50) ++large;
+        else ++small;
+    }
+    if (large > small) {
+        layout.texture1 = 4;
+        layout.texture2 = 5;
+        layout.texture3 = 6;
+        layout.flags = 7;
+        layout.variation = 8;
+        layout.color = 9;
+    }
+    return layout;
+}
 
 std::string dirOf(const std::string& p) {
     size_t k = p.find_last_of("\\/");
@@ -212,7 +259,8 @@ static void stripMagentaKey(Image& im) {
 
 template <class ModelFor>
 static void convertCharactersImpl(const Options& o, const DataDir& data, PackWriter& pack, ConvStats& st,
-                                  const Dbc* races, const Dbc* sections, const Dbc* hair, const Dbc* facial, const Dbc& cdi,
+                                  const Dbc* races, const Dbc* sections, const CharSectionsLayout& sectionLayout, const Dbc* hair,
+                                  const Dbc* facial, const Dbc& cdi,
                                   const std::map<uint32_t, std::string>& modelPath, ModelFor& modelFor) {
     if (!races || races->fields <= dbc335a::chrRaces::RequiredExpansion) {
         std::fprintf(stderr, "players: ChrRaces.dbc is missing or not the WotLK 3.3.5a layout\n");
@@ -294,14 +342,14 @@ static void convertCharactersImpl(const Options& o, const DataDir& data, PackWri
             std::vector<W3dCharSection> secs;
             if (sections)
                 for (uint32_t r = 0; r < sections->records; ++r) {
-                    if (sections->u32(r, 1) != race || sections->u32(r, 2) != sex) continue;
-                    uint32_t kind = sections->u32(r, 3);
+                    if (sections->u32(r, sectionLayout.race) != race || sections->u32(r, sectionLayout.sex) != sex) continue;
+                    uint32_t kind = sections->u32(r, sectionLayout.baseSection);
                     if (kind > W3D_CSEC_UNDERWEAR) continue;
                     W3dCharSection c{};
                     c.kind = (uint8_t)kind;
-                    c.variation = (uint8_t)sections->u32(r, 4);
-                    c.color = (uint8_t)sections->u32(r, 5);
-                    std::string t1 = sections->str(r, 6), t2 = sections->str(r, 7);
+                    c.variation = (uint8_t)sections->u32(r, sectionLayout.variation);
+                    c.color = (uint8_t)sections->u32(r, sectionLayout.color);
+                    std::string t1 = sections->str(r, sectionLayout.texture1), t2 = sections->str(r, sectionLayout.texture2);
                     switch (kind) {
                         case W3D_CSEC_SKIN: c.img[0] = addLayer(t1, kBase); break;
                         case W3D_CSEC_FACE:
@@ -367,9 +415,10 @@ static void convertCharactersDone(ConvStats& st) {
 
 template <class F>
 static void convertCharacters(const Options& o, const DataDir& data, PackWriter& pack, ConvStats& st,
-                              const Dbc* races, const Dbc* sections, const Dbc* hair, const Dbc* facial, const Dbc& cdi,
+                              const Dbc* races, const Dbc* sections, const CharSectionsLayout& sectionLayout, const Dbc* hair,
+                              const Dbc* facial, const Dbc& cdi,
                               const std::map<uint32_t, std::string>& modelPath, F& modelFor) {
-    convertCharactersImpl(o, data, pack, st, races, sections, hair, facial, cdi, modelPath, modelFor);
+    convertCharactersImpl(o, data, pack, st, races, sections, sectionLayout, hair, facial, cdi, modelPath, modelFor);
     convertCharactersDone<F>(st);
 }
 
@@ -523,7 +572,8 @@ bool convertCreatures(const Options& o, const DataDir& data, PackWriter& pack, C
     bool haveExtra = cdie.load(data, "CreatureDisplayInfoExtra.dbc");
     bool haveHair = hair.load(data, "CharHairGeosets.dbc");
     bool haveFacial = facial.load(data, "CharacterFacialHairStyles.dbc");
-    bool haveSections = sections.load(data, "CharSections.dbc");
+    bool haveSections = sections.load(data, "CharSections.dbc") && sections.fields >= 8;
+    const CharSectionsLayout sectionLayout = haveSections ? detectCharSectionsLayout(sections) : CharSectionsLayout{};
     const bool haveRaces = !o.players || (races.load(data, "ChrRaces.dbc") &&
                                           races.fields > dbc335a::chrRaces::RequiredExpansion);
     Dbc items;   // ItemDisplayInfo.dbc: WotLK GeosetGroup1..3 are columns 7..9.
@@ -563,9 +613,10 @@ bool convertCreatures(const Options& o, const DataDir& data, PackWriter& pack, C
     std::map<std::pair<uint32_t, uint32_t>, std::string> hairTexture;   // (race<<8|sex, style<<8|color) -> texture
     if (haveSections)
         for (uint32_t r = 0; r < sections.records; ++r)
-            if (sections.u32(r, 3) == 3)   // hair
-                hairTexture[{sections.u32(r, 1) << 8 | sections.u32(r, 2), sections.u32(r, 4) << 8 | sections.u32(r, 5)}] =
-                    sections.str(r, 6);
+            if (sections.u32(r, sectionLayout.baseSection) == 3)   // hair
+                hairTexture[{sections.u32(r, sectionLayout.race) << 8 | sections.u32(r, sectionLayout.sex),
+                             sections.u32(r, sectionLayout.variation) << 8 | sections.u32(r, sectionLayout.color)}] =
+                    sections.str(r, sectionLayout.texture1);
 
     std::set<uint32_t> only;
     if (!o.creatureDisplays.empty()) {
@@ -721,8 +772,8 @@ bool convertCreatures(const Options& o, const DataDir& data, PackWriter& pack, C
         progressDone("creatures: %zu displays, %zu models (%zu failed)", st.displaysOk, st.creatureModelsOk,
                      st.creatureModelsFailed);
     if (o.players) {
-        convertCharacters(o, data, pack, st, haveRaces ? &races : nullptr, haveSections ? &sections : nullptr, haveHair ? &hair : nullptr,
-                          haveFacial ? &facial : nullptr, cdi, modelPath, modelFor);
+        convertCharacters(o, data, pack, st, haveRaces ? &races : nullptr, haveSections ? &sections : nullptr, sectionLayout,
+                          haveHair ? &hair : nullptr, haveFacial ? &facial : nullptr, cdi, modelPath, modelFor);
         if (!o.noItems) convertItems(o, data, pack, st);   // stage 5.19: armour, helmets, shoulders, weapons for players
     }
     if (o.transports || o.gameobjects || o.creatures) convertTransports(o, data, pack, st, modelFor);
