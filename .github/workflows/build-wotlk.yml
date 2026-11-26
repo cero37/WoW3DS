@@ -22,6 +22,8 @@ jobs:
       - name: Build 3DSX and CIA
         working-directory: proto3ds
         run: |
+          dkp-pacman -Sy --noconfirm 3ds-bannertool 3ds-makerom
+          export PATH="/opt/devkitpro/tools/bin:$PATH"
           make
           make cia
 
