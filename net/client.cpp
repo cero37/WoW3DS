@@ -434,7 +434,7 @@ void WorldClient::handle(Packet& p) {
     switch (p.opcode) {
         case SMSG_AUTH_CHALLENGE: {
             if (state_ != State::WaitChallenge) break;
-            if (r.left() < 40) { fail("malformed WotLK auth challenge"); return; }
+            if (r.left() != 40) { fail("malformed WotLK auth challenge"); return; }
             r.u32();  // DoS difficulty
             Bytes serverChallenge = r.bytes(4);
             r.skip(32);  // DoS challenge
@@ -464,7 +464,7 @@ void WorldClient::handle(Packet& p) {
             w.u32(0);   // region ID
             w.u32(0);   // battlegroup ID
             w.u32(realmId_);
-            w.u64(0);   // DoS response
+            w.u64(3);   // DoS response
             w.raw(digest);
             w.u32((uint32_t)ad.b.size());
             w.raw(zlibStored(ad.b));
