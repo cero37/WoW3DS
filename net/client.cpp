@@ -462,8 +462,8 @@ void WorldClient::handle(Packet& p) {
         case SMSG_AUTH_CHALLENGE: {
             if (state_ != State::WaitChallenge) break;
             if (r.left() != 40) { fail("malformed WotLK auth challenge"); return; }
-            r.u32();  // DoS difficulty
-            Bytes serverChallenge = r.bytes(4);
+            r.skip(4);  // DoS difficulty
+            Bytes serverChallenge = r.bytes(4);  // Raw wire-order seed; do not convert endianness.
             r.skip(32);  // DoS challenge
             Bytes clientChallenge(4);
             if (!randomBytes(clientChallenge.data(), clientChallenge.size())) {
@@ -478,14 +478,22 @@ void WorldClient::handle(Packet& p) {
             hin.raw(serverChallenge);
             hin.raw(K_);
             Bytes digest = sha1(hin.b);
-            // The official 3.3.5a client includes Blizzard_CombatLog and the
-            // last-banned-addon timestamp in the compressed AddonInfo block.
+            static const char* const officialAddons[] = {
+                "Blizzard_AchievementUI", "Blizzard_ArenaUI", "Blizzard_AuctionUI",
+                "Blizzard_BattlefieldMinimap", "Blizzard_BindingUI", "Blizzard_CombatLog",
+                "Blizzard_CombatText", "Blizzard_GlyphUI", "Blizzard_InspectUI",
+                "Blizzard_MacroUI", "Blizzard_RaidUI", "Blizzard_TalentUI",
+                "Blizzard_TimeManager", "Blizzard_TradeSkillUI", "Blizzard_TrainerUI",
+                "Blizzard_VehicleUI"
+            };
             Writer ad;
-            ad.u32(1);
-            ad.cstr("Blizzard_CombatLog");
-            ad.u8(0x01);
-            ad.u32(0x4C1C776D);  // public key CRC
-            ad.u32(0);           // URL CRC
+            ad.u32((uint32_t)(sizeof(officialAddons) / sizeof(officialAddons[0])));
+            for (const char* addon : officialAddons) {
+                ad.cstr(addon);
+                ad.u8(0x01);
+                ad.u32(0x4C1C776D);
+                ad.u32(0);
+            }
             ad.u32((uint32_t)std::time(nullptr));
             Writer w;
             w.u32(ver_.build);
@@ -496,10 +504,10 @@ void WorldClient::handle(Packet& p) {
             w.u32(0);   // region ID
             w.u32(0);   // battlegroup ID
             w.u32(realmId_);
-            w.u64(3);   // DoS response
+            w.u32(3);   // DoS response
             w.raw(digest);
             w.u32((uint32_t)ad.b.size());
-            w.raw(zlibStored(ad.b));
+            w.raw(zlibCompress(ad.b));
             send(CMSG_AUTH_SESSION, w.b);
             cipher_.init(K_);   // everything after AUTH_SESSION has encrypted headers
             tStep_ = nowMs();

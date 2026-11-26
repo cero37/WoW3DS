@@ -99,9 +99,9 @@ private:
 };
 
 // ------------------------------------------------------------------ misc
-// zlib stream made of one "stored" (uncompressed) deflate block: valid input
-// for any inflate, so the client needs no compressor (used for the addon list).
+// zlibStored emits an uncompressed block; zlibCompress emits a fixed-Huffman DEFLATE block.
 Bytes zlibStored(const Bytes& data);
+Bytes zlibCompress(const Bytes& data);
 // Platform random bytes (3DS: ps:ps, Windows: BCrypt/rand_s, POSIX: /dev/urandom).
 bool randomBytes(uint8_t* out, size_t n);
 std::string upper(std::string s);

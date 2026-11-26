@@ -1,4 +1,5 @@
 #include "../client.hpp"
+#include "../inflate.hpp"
 #include "../wire.hpp"
 
 #include <arpa/inet.h>
@@ -63,32 +64,54 @@ bool receiveClientPacket(int fd, HeaderCipher& cipher, bool encrypted, uint32_t&
     return body.empty() || readExact(fd, body.data(), body.size());
 }
 
-bool verifyAddonInfo(const Bytes& authSession) {
-    size_t pos = 8;
-    while (pos < authSession.size() && authSession[pos] != 0) ++pos;
-    if (pos == authSession.size()) return false;
-    pos += 1 + 48;
-    if (pos + 4 + 7 + 4 > authSession.size()) return false;
-
-    const uint32_t unpackedSize = (uint32_t)authSession[pos] |
-                                  ((uint32_t)authSession[pos + 1] << 8) |
-                                  ((uint32_t)authSession[pos + 2] << 16) |
-                                  ((uint32_t)authSession[pos + 3] << 24);
-    pos += 4;
-    if (authSession[pos] != 0x78 || authSession[pos + 1] != 0x01 || authSession[pos + 2] != 0x01)
+bool verifyAddonInfo(const Bytes& authSession, const Bytes& sessionKey) {
+    Reader packet(authSession);
+    if (packet.u32() != 12340 || packet.u32() != 0 || packet.cstr() != "TEST" || packet.u32() != 0)
         return false;
-    const uint16_t blockSize = (uint16_t)(authSession[pos + 3] | (authSession[pos + 4] << 8));
-    const uint16_t inverseSize = (uint16_t)(authSession[pos + 5] | (authSession[pos + 6] << 8));
-    if ((uint16_t)~blockSize != inverseSize || blockSize != unpackedSize ||
-        pos + 7 + blockSize + 4 != authSession.size())
+    Bytes clientSeed = packet.bytes(4);
+    if (packet.u32() != 0 || packet.u32() != 0 || packet.u32() != 0 || packet.u32() != 3)
+        return false;
+    Bytes digest = packet.bytes(20);
+    Writer digestInput;
+    digestInput.raw("TEST", 4);
+    digestInput.u32(0);
+    digestInput.raw(clientSeed);
+    digestInput.raw(Bytes{1, 2, 3, 4});
+    digestInput.raw(sessionKey);
+    if (digest != sha1(digestInput.b) || packet.left() < 4) return false;
+    const uint32_t unpackedSize = packet.u32();
+    if (unpackedSize != 465) return false;
+    const size_t pos = packet.pos;
+    if (pos + 2 > authSession.size() || authSession[pos] != 0x78 || authSession[pos + 1] != 0x9C)
         return false;
 
-    Bytes addon(authSession.begin() + (long)pos + 7, authSession.begin() + (long)pos + 7 + blockSize);
+    Bytes addon;
+    if (!zlibInflate(authSession.data() + pos, authSession.size() - pos, addon, unpackedSize))
+        return false;
     Reader r(addon);
-    if (r.u32() != 1 || r.cstr() != "Blizzard_CombatLog" || r.u8() != 0x01 ||
-        r.u32() != 0x4C1C776D || r.u32() != 0)
-        return false;
+    static const char* const officialAddons[] = {
+        "Blizzard_AchievementUI", "Blizzard_ArenaUI", "Blizzard_AuctionUI",
+        "Blizzard_BattlefieldMinimap", "Blizzard_BindingUI", "Blizzard_CombatLog",
+        "Blizzard_CombatText", "Blizzard_GlyphUI", "Blizzard_InspectUI",
+        "Blizzard_MacroUI", "Blizzard_RaidUI", "Blizzard_TalentUI",
+        "Blizzard_TimeManager", "Blizzard_TradeSkillUI", "Blizzard_TrainerUI",
+        "Blizzard_VehicleUI"
+    };
+    if (r.u32() != sizeof(officialAddons) / sizeof(officialAddons[0])) return false;
+    for (const char* name : officialAddons) {
+        if (r.cstr() != name || r.u8() != 1 || r.u32() != 0x4C1C776D || r.u32() != 0) return false;
+    }
     return !r.bad && r.u32() != 0 && r.left() == 0;
+}
+
+void appendServerPacket(Bytes& out, HeaderCipher& cipher, uint16_t opcode, const Bytes& payload) {
+    const uint16_t size = (uint16_t)(payload.size() + 2);
+    uint8_t header[] = {
+        (uint8_t)(size >> 8), (uint8_t)size, (uint8_t)opcode, (uint8_t)(opcode >> 8)
+    };
+    cipher.decrypt(header, sizeof header);
+    out.insert(out.end(), header, header + sizeof header);
+    out.insert(out.end(), payload.begin(), payload.end());
 }
 
 Bytes characterList() {
@@ -133,7 +156,7 @@ bool runServer(int listenFd, const Bytes& sessionKey, std::string& error) {
     Bytes authSession;
     HeaderCipher unencrypted;
     if (!receiveClientPacket(fd, unencrypted, false, opcode, authSession) || opcode != 0x1ED ||
-        !verifyAddonInfo(authSession)) {
+        !verifyAddonInfo(authSession, sessionKey)) {
         error = "invalid CMSG_AUTH_SESSION or AddonInfo";
         ::close(fd);
         return false;
@@ -142,11 +165,13 @@ bool runServer(int listenFd, const Bytes& sessionKey, std::string& error) {
     HeaderCipher cipher;
     cipher.init(sessionKey);
     Bytes authResponse = {0x0C, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2};
-    Bytes responseHeader = {0, 13, 0xEE, 0x01};
-    cipher.decrypt(responseHeader.data(), responseHeader.size());
-    responseHeader.insert(responseHeader.end(), authResponse.begin(), authResponse.end());
-    if (!sendExact(fd, responseHeader.data(), responseHeader.size())) {
-        error = "could not send SMSG_AUTH_RESPONSE";
+    Bytes responseBurst;
+    appendServerPacket(responseBurst, cipher, 0x1EE, authResponse);
+    appendServerPacket(responseBurst, cipher, 0x2EF, Bytes{0x11});
+    appendServerPacket(responseBurst, cipher, 0x255, Bytes{0x22});
+    appendServerPacket(responseBurst, cipher, 0x0FD, Bytes{0x33});
+    if (!sendExact(fd, responseBurst.data(), responseBurst.size())) {
+        error = "could not send the encrypted auth response burst";
         ::close(fd);
         return false;
     }
@@ -202,6 +227,8 @@ int main() {
 
     WorldClient client;
     const bool started = client.start("127.0.0.1:" + std::to_string(ntohs(address.sin_port)), "TEST", sessionKey);
+    std::vector<uint16_t> receivedBurst;
+    client.onPacket = [&](const Packet& packet) { receivedBurst.push_back(packet.opcode); };
     const uint64_t deadline = nowMs() + 10000;
     while (started && client.state() != WorldClient::State::CharSelect &&
            client.state() != WorldClient::State::Failed && nowMs() < deadline) {
@@ -209,16 +236,18 @@ int main() {
         sleepMs(1);
     }
     const bool receivedNine = client.state() == WorldClient::State::CharSelect && client.characters().size() == 9;
+    const bool receivedBurstInOrder =
+        receivedBurst == std::vector<uint16_t>{0x2EF, 0x255, 0x0FD};
     client.close();
     if (!started) ::shutdown(listener, SHUT_RDWR);
     server.join();
     ::close(listener);
 
-    if (!started || !receivedNine || !serverOk) {
+    if (!started || !receivedNine || !receivedBurstInOrder || !serverOk) {
         std::fprintf(stderr, "world auth handshake test failed: client=%s, server=%s\n",
                      client.error().c_str(), serverError.c_str());
         return 1;
     }
-    std::puts("WotLK world auth handshake passed (AddonInfo, AUTH_RESPONSE, CHAR_ENUM, extended header)");
+    std::puts("WotLK world auth handshake passed (16-addon AuthSession, encrypted response burst, CHAR_ENUM)");
     return 0;
 }

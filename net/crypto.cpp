@@ -357,6 +357,108 @@ Bytes zlibStored(const Bytes& data) {
     return out;
 }
 
+Bytes zlibCompress(const Bytes& data) {
+    static const uint16_t lengthBase[] = {
+        3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27,
+        31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258
+    };
+    static const uint8_t lengthExtra[] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2,
+        2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0
+    };
+    static const uint16_t distanceBase[] = {
+        1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129,
+        193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097,
+        6145, 8193, 12289, 16385, 24577
+    };
+    static const uint8_t distanceExtra[] = {
+        0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6,
+        6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13
+    };
+
+    Bytes out = {0x78, 0x9C};
+    uint8_t bitBuffer = 0;
+    unsigned bitCount = 0;
+    auto writeBits = [&](uint32_t value, unsigned count) {
+        while (count--) {
+            bitBuffer |= (uint8_t)((value & 1) << bitCount);
+            value >>= 1;
+            if (++bitCount == 8) {
+                out.push_back(bitBuffer);
+                bitBuffer = 0;
+                bitCount = 0;
+            }
+        }
+    };
+    auto reverseBits = [](uint32_t value, unsigned count) {
+        uint32_t reversed = 0;
+        while (count--) {
+            reversed = (reversed << 1) | (value & 1);
+            value >>= 1;
+        }
+        return reversed;
+    };
+    auto writeSymbol = [&](uint16_t symbol) {
+        uint32_t code;
+        unsigned count;
+        if (symbol <= 143) { code = symbol + 0x30; count = 8; }
+        else if (symbol <= 255) { code = symbol - 144 + 0x190; count = 9; }
+        else if (symbol <= 279) { code = symbol - 256; count = 7; }
+        else { code = symbol - 280 + 0xC0; count = 8; }
+        writeBits(reverseBits(code, count), count);
+    };
+
+    writeBits(1, 1);  // Final block.
+    writeBits(1, 2);  // Fixed Huffman codes.
+    for (size_t pos = 0; pos < data.size();) {
+        size_t bestLength = 0, bestDistance = 0;
+        const size_t firstCandidate = pos > 32768 ? pos - 32768 : 0;
+        for (size_t candidate = pos; candidate > firstCandidate;) {
+            --candidate;
+            size_t length = 0;
+            while (length < 258 && pos + length < data.size() &&
+                   data[candidate + length] == data[pos + length])
+                ++length;
+            if (length > bestLength) {
+                bestLength = length;
+                bestDistance = pos - candidate;
+                if (length == 258) break;
+            }
+        }
+
+        if (bestLength < 3) {
+            writeSymbol(data[pos++]);
+            continue;
+        }
+
+        size_t lengthCode = 0;
+        while (lengthCode + 1 < sizeof(lengthBase) / sizeof(lengthBase[0]) &&
+               bestLength >= lengthBase[lengthCode + 1])
+            ++lengthCode;
+        writeSymbol((uint16_t)(257 + lengthCode));
+        writeBits((uint32_t)(bestLength - lengthBase[lengthCode]), lengthExtra[lengthCode]);
+
+        size_t distanceCode = 0;
+        while (distanceCode + 1 < sizeof(distanceBase) / sizeof(distanceBase[0]) &&
+               bestDistance >= distanceBase[distanceCode + 1])
+            ++distanceCode;
+        writeBits(reverseBits((uint32_t)distanceCode, 5), 5);
+        writeBits((uint32_t)(bestDistance - distanceBase[distanceCode]), distanceExtra[distanceCode]);
+        pos += bestLength;
+    }
+    writeSymbol(256);
+    if (bitCount) out.push_back(bitBuffer);
+
+    uint32_t s1 = 1, s2 = 0;
+    for (uint8_t byte : data) {
+        s1 = (s1 + byte) % 65521;
+        s2 = (s2 + s1) % 65521;
+    }
+    const uint32_t adler = (s2 << 16) | s1;
+    for (int i = 3; i >= 0; --i) out.push_back((uint8_t)(adler >> (8 * i)));
+    return out;
+}
+
 bool randomBytes(uint8_t* out, size_t n) {
 #if defined(__3DS__)
     static bool inited = false;
